@@ -157,6 +157,8 @@ MODULE initialization
          IF (line=='External_B_field:') READ(in1,*) EXTERNAL_B_FIELD(1), EXTERNAL_B_FIELD(2), EXTERNAL_B_FIELD(3)
          IF (line=='External_E_field:') READ(in1,*) EXTERNAL_E_FIELD(1), EXTERNAL_E_FIELD(2), EXTERNAL_E_FIELD(3)
 
+         IF (line=='External_field_frequency:') READ(in1,*) EXTERNAL_FIELD_FREQUENCY
+
          IF (line=='Magnetic_dipole:') THEN
             BOOL_MAGNETIC_DIPOLE = .TRUE.
             READ(in1,*) MAGNETIC_MOMENT, DIPOLE_POSITION(:), DIPOLE_ORIENTATION(:)
@@ -2620,9 +2622,15 @@ MODULE initialization
                      END IF
 
                      IF (DIMS == 1) THEN
-                        XP = V1(1) + (V2(1)-V1(1))*S
-                        YP = YMIN + (YMAX-YMIN)*T
-                        ZP = ZMIN + (ZMAX-ZMIN)*U
+                        IF (AXI) THEN
+                           XP = XMIN + (XMAX-XMIN)*S
+                           YP = V1(2) + (V2(2)-V1(2))*T
+                           ZP = 0.d0
+                        ELSE
+                           XP = V1(1) + (V2(1)-V1(1))*S
+                           YP = YMIN + (YMAX-YMIN)*T
+                           ZP = ZMIN + (ZMAX-ZMIN)*U
+                        END IF
                      ELSE IF (DIMS == 2) THEN
                         XP = V1(1) + (V2(1)-V1(1))*S + (V3(1)-V1(1))*T
                         YP = V1(2) + (V2(2)-V1(2))*S + (V3(2)-V1(2))*T

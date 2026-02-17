@@ -156,7 +156,9 @@ MODULE grid_and_partition
                DO I = 1, NCELLS
                   CELLCENTROID = (U1D_GRID%NODE_COORDS(:, U1D_GRID%CELL_NODES(1,I)) &
                                +  U1D_GRID%NODE_COORDS(:, U1D_GRID%CELL_NODES(2,I))) / 2.
-                  IF (PARTITION_STYLE == STRIPSX) THEN
+                  IF (PARTITION_STYLE == STRIPSY .AND. AXI) THEN
+                     CENTROID(I) = CELLCENTROID(2)
+                  ELSE IF (PARTITION_STYLE == STRIPSX) THEN
                      CENTROID(I) = CELLCENTROID(1)
                   ELSE
                      CALL ERROR_ABORT('The specified partition style is not supported. Aborting!')
@@ -676,8 +678,13 @@ MODULE grid_and_partition
          IF (LINE == 'NPOIN=') THEN
             ALLOCATE(U1D_GRID%NODE_COORDS(3,NUM))
             DO I = 1, NUM
-               READ(in5,*, IOSTAT=ReasonEOF) XYZ(1)
-               XYZ(2) = 0.d0
+               IF (AXI) THEN
+                  READ(in5,*, IOSTAT=ReasonEOF) XYZ(2)
+                  XYZ(1) = 0.d0
+               ELSE
+                  READ(in5,*, IOSTAT=ReasonEOF) XYZ(1)
+                  XYZ(2) = 0.d0
+               END IF
                XYZ(3) = 0.d0 ! Stay on the x axis.
                U1D_GRID%NODE_COORDS(:,I) = XYZ
             END DO
@@ -871,8 +878,13 @@ MODULE grid_and_partition
          A = U1D_GRID%NODE_COORDS(:, U1D_GRID%CELL_NODES(1,I))
          B = U1D_GRID%NODE_COORDS(:, U1D_GRID%CELL_NODES(2,I))
 
-         U1D_GRID%SEGMENT_LENGTHS(I) = ABS(A(1)-B(1))
-         U1D_GRID%CELL_VOLUMES(I) = U1D_GRID%SEGMENT_LENGTHS(I) * (YMAX-YMIN) * (ZMAX-ZMIN)
+         IF (AXI) THEN
+            U1D_GRID%SEGMENT_LENGTHS(I) = ABS(A(2)-B(2))
+            U1D_GRID%CELL_VOLUMES(I) = U1D_GRID%SEGMENT_LENGTHS(I) * 0.5*(A(2)+B(2)) * (XMAX-XMIN) * (ZMAX-ZMIN)
+         ELSE
+            U1D_GRID%SEGMENT_LENGTHS(I) = ABS(A(1)-B(1))
+            U1D_GRID%CELL_VOLUMES(I) = U1D_GRID%SEGMENT_LENGTHS(I) * (YMAX-YMIN) * (ZMAX-ZMIN)
+         END IF
       END DO
 
       IF (PROC_ID == 0) THEN
@@ -932,13 +944,23 @@ MODULE grid_and_partition
       ALLOCATE(U1D_GRID%EDGE_NORMAL(3, 2, U1D_GRID%NUM_CELLS))
       DO I = 1, U1D_GRID%NUM_CELLS
 
-         U1D_GRID%EDGE_NORMAL(1,1,I) = -1.d0
-         U1D_GRID%EDGE_NORMAL(2,1,I) =  0.d0
-         U1D_GRID%EDGE_NORMAL(3,1,I) =  0.d0
+         IF (AXI) THEN
+            U1D_GRID%EDGE_NORMAL(1,1,I) =  0.d0
+            U1D_GRID%EDGE_NORMAL(2,1,I) = -1.d0
+            U1D_GRID%EDGE_NORMAL(3,1,I) =  0.d0
 
-         U1D_GRID%EDGE_NORMAL(1,2,I) =  1.d0
-         U1D_GRID%EDGE_NORMAL(2,2,I) =  0.d0
-         U1D_GRID%EDGE_NORMAL(3,2,I) =  0.d0
+            U1D_GRID%EDGE_NORMAL(1,2,I) =  0.d0
+            U1D_GRID%EDGE_NORMAL(2,2,I) =  1.d0
+            U1D_GRID%EDGE_NORMAL(3,2,I) =  0.d0
+         ELSE
+            U1D_GRID%EDGE_NORMAL(1,1,I) = -1.d0
+            U1D_GRID%EDGE_NORMAL(2,1,I) =  0.d0
+            U1D_GRID%EDGE_NORMAL(3,1,I) =  0.d0
+
+            U1D_GRID%EDGE_NORMAL(1,2,I) =  1.d0
+            U1D_GRID%EDGE_NORMAL(2,2,I) =  0.d0
+            U1D_GRID%EDGE_NORMAL(3,2,I) =  0.d0
+         END IF
 
       END DO
 
@@ -949,9 +971,13 @@ MODULE grid_and_partition
       END IF
 
       DO I = 1, U1D_GRID%NUM_CELLS
-         X1 = U1D_GRID%NODE_COORDS(1, U1D_GRID%CELL_NODES(2,I)) &
-            - U1D_GRID%NODE_COORDS(1, U1D_GRID%CELL_NODES(1,I))
-
+         IF (AXI) THEN
+            X1 = U1D_GRID%NODE_COORDS(2, U1D_GRID%CELL_NODES(2,I)) &
+               - U1D_GRID%NODE_COORDS(2, U1D_GRID%CELL_NODES(1,I))
+         ELSE
+            X1 = U1D_GRID%NODE_COORDS(1, U1D_GRID%CELL_NODES(2,I)) &
+               - U1D_GRID%NODE_COORDS(1, U1D_GRID%CELL_NODES(1,I))
+         END IF
          IF (X1 < 0) CALL ERROR_ABORT('1D mesh segment are reversed.')
       END DO
 
@@ -966,10 +992,16 @@ MODULE grid_and_partition
          V1 = U1D_GRID%CELL_NODES(1,I)
          V2 = U1D_GRID%CELL_NODES(2,I)
 
-         X1 = U1D_GRID%NODE_COORDS(1, V1)
-         X2 = U1D_GRID%NODE_COORDS(1, V2)
+         IF (AXI) THEN
+            X1 = U1D_GRID%NODE_COORDS(2, V1)
+            X2 = U1D_GRID%NODE_COORDS(2, V2)
+         ELSE
+            X1 = U1D_GRID%NODE_COORDS(1, V1)
+            X2 = U1D_GRID%NODE_COORDS(1, V2)
+         END IF
 
          ! These are such that PSI_i = x * BASIS_COEFFS(1,i,IC) + BASIS_COEFFS(2,i,IC)
+         ! or in axisymmetric  PSI_i = y * BASIS_COEFFS(1,i,IC) + BASIS_COEFFS(2,i,IC)
 
          U1D_GRID%BASIS_COEFFS(1,1,I) = -1.d0
          U1D_GRID%BASIS_COEFFS(2,1,I) =  X2
@@ -1047,7 +1079,13 @@ MODULE grid_and_partition
 
       ! Compute areas and lengths of boundary mesh
       ALLOCATE(U0D_GRID%VERTEX_AREAS(U0D_GRID%NUM_POINTS))
-      U0D_GRID%VERTEX_AREAS = (YMAX-YMIN) * (ZMAX-ZMIN)
+      IF (AXI) THEN
+         DO I = 1, NUM_BOUNDARY_NODES
+            U0D_GRID%VERTEX_AREAS(I) = (XMAX-XMIN) * (ZMAX-ZMIN) * U0D_GRID%NODE_COORDS(2,I)
+         END DO
+      ELSE
+         U0D_GRID%VERTEX_AREAS = (YMAX-YMIN) * (ZMAX-ZMIN)
+      END IF
 
       IF (PROC_ID == 0) THEN
          WRITE(*,*) '============================================================='

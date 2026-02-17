@@ -205,6 +205,14 @@ MODULE fields
                K22 = 1.0/LENGTH*EPS_REL
                K12 =-1.0/LENGTH*EPS_REL
 
+               Y1 = U1D_GRID%NODE_COORDS(2, V1)
+               Y2 = U1D_GRID%NODE_COORDS(2, V2)
+
+               IF (AXI) THEN
+                  K11 = K11*(Y1+Y2)/2.
+                  K22 = K22*(Y1+Y2)/2.
+                  K12 = K12*(Y1+Y2)/2.
+               END IF
 
                IF (PIC_TYPE == EXPLICITLIMITED) THEN
                   K11 = K11 * (1. + DXLDRATIO(I))
@@ -3516,8 +3524,13 @@ MODULE fields
 
                      FACE_PG = U1D_GRID%CELL_EDGES_PG(BOUNDCOLL, IC)
                      FACE_NORMAL = U1D_GRID%EDGE_NORMAL(:,BOUNDCOLL,IC)
-                     FACE_TANG1 = [0.d0, FACE_NORMAL(1), 0.d0]
-                     FACE_TANG2 = [0.d0, 0.d0, 1.d0]
+                     IF (AXI) THEN
+                        FACE_TANG1 = [-FACE_NORMAL(2), 0.d0, 0.d0]
+                        FACE_TANG2 = [0.d0, 0.d0, 1.d0]
+                     ELSE
+                        FACE_TANG1 = [0.d0, FACE_NORMAL(1), 0.d0]
+                        FACE_TANG2 = [0.d0, 0.d0, 1.d0]
+                     END IF
                   ELSE IF (DIMS == 2) THEN
                      NEIGHBOR = U2D_GRID%CELL_NEIGHBORS(BOUNDCOLL, IC)
                      IF (NEIGHBOR == -1) THEN
@@ -5359,8 +5372,13 @@ MODULE fields
             DO I = 1, NCELLS
                DO P = 1, 2
                   VP = U1D_GRID%CELL_NODES(P,I)
-                  E_FIELD(1,1,I) =    E_FIELD(1,1,I)    - PHI_FIELD(VP)   *U1D_GRID%BASIS_COEFFS(1,P,I)
-                  EBAR_FIELD(1,1,I) = EBAR_FIELD(1,1,I) - PHIBAR_FIELD(VP)*U1D_GRID%BASIS_COEFFS(1,P,I)
+                  IF (AXI) THEN
+                     E_FIELD(2,1,I) =    E_FIELD(2,1,I)    - PHI_FIELD(VP)   *U1D_GRID%BASIS_COEFFS(1,P,I)
+                     EBAR_FIELD(1,1,I) = EBAR_FIELD(1,1,I) - PHIBAR_FIELD(VP)*U1D_GRID%BASIS_COEFFS(1,P,I)
+                  ELSE
+                     E_FIELD(1,1,I) =    E_FIELD(1,1,I)    - PHI_FIELD(VP)   *U1D_GRID%BASIS_COEFFS(1,P,I)
+                     EBAR_FIELD(1,1,I) = EBAR_FIELD(1,1,I) - PHIBAR_FIELD(VP)*U1D_GRID%BASIS_COEFFS(1,P,I)
+                  END IF
                END DO
             END DO
 
@@ -5563,11 +5581,20 @@ MODULE fields
          IF (GRID_TYPE == UNSTRUCTURED) THEN 
             IC = part_adv(JP)%IC
             IF (DIMS == 1) THEN
-               RHO_Q = K*CHARGE*FNUM*SPWT/(YMAX-YMIN)/(ZMAX-ZMIN)
+               IF (AXI) THEN
+                  RHO_Q = K*CHARGE*FNUM*SPWT/(XMAX-XMIN)/(ZMAX-ZMIN)
+               ELSE
+                  RHO_Q = K*CHARGE*FNUM*SPWT/(YMAX-YMIN)/(ZMAX-ZMIN)
+               END IF
                DO P = 1, 2
                   VP = U1D_GRID%CELL_NODES(P,IC) - 1
-                  PSIP = U1D_GRID%BASIS_COEFFS(1,P,IC)*part_adv(JP)%X &
-                       + U1D_GRID%BASIS_COEFFS(2,P,IC)
+                  IF (AXI) THEN
+                     PSIP = U1D_GRID%BASIS_COEFFS(1,P,IC)*part_adv(JP)%Y &
+                          + U1D_GRID%BASIS_COEFFS(2,P,IC)
+                  ELSE
+                     PSIP = U1D_GRID%BASIS_COEFFS(1,P,IC)*part_adv(JP)%X &
+                          + U1D_GRID%BASIS_COEFFS(2,P,IC)
+                  END IF
                   RHS(VP) = RHS(VP) + RHO_Q*PSIP
                END DO
             ELSE IF (DIMS == 2) THEN
@@ -6405,8 +6432,13 @@ MODULE fields
 
                      FACE_PG = U1D_GRID%CELL_EDGES_PG(BOUNDCOLL, IC)
                      FACE_NORMAL = U1D_GRID%EDGE_NORMAL(:,BOUNDCOLL,IC)
-                     FACE_TANG1 = [0.d0, FACE_NORMAL(1), 0.d0]
-                     FACE_TANG2 = [0.d0, 0.d0, 1.d0]
+                     IF (AXI) THEN
+                        FACE_TANG1 = [-FACE_NORMAL(2), 0.d0, 0.d0]
+                        FACE_TANG2 = [0.d0, 0.d0, 1.d0]
+                     ELSE
+                        FACE_TANG1 = [0.d0, FACE_NORMAL(1), 0.d0]
+                        FACE_TANG2 = [0.d0, 0.d0, 1.d0]
+                     END IF
                   ELSE IF (DIMS == 2) THEN
                      NEIGHBOR = U2D_GRID%CELL_NEIGHBORS(BOUNDCOLL, IC)
                      IF (NEIGHBOR == -1) THEN

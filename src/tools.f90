@@ -1029,9 +1029,9 @@ CONTAINS
             ! Open file for writing
             IF (BOOL_BINARY_OUTPUT) THEN
                OPEN(1610, FILE=filename, ACCESS='SEQUENTIAL', POSITION='APPEND', FORM='UNFORMATTED', &
-               STATUS='UNKNOWN', CONVERT='BIG_ENDIAN', RECL=56)
+               STATUS='UNKNOWN', CONVERT='BIG_ENDIAN', RECL=60)
                WRITE(1610) TIMESTEP, particles(IP)%S_ID, particles(IP)%X, particles(IP)%Y, particles(IP)%Z, &
-               particles(IP)%VX, particles(IP)%VY, particles(IP)%VZ
+               particles(IP)%VX, particles(IP)%VY, particles(IP)%VZ, particles(IP)%IC
                CLOSE(1610)
             ELSE
                OPEN(1610, FILE=filename, POSITION='APPEND')
