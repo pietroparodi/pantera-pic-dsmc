@@ -124,6 +124,7 @@ MODULE collisions
       ! Compute collisions between particles
       TIMESTEP_COLL = 0
       TIMESTEP_REAC = 0
+      TIMESTEP_REACTIONS = 0.d0
 
       ALLOCATE(REMOVE_PART(3*NP_PROC))
       REMOVE_PART = .FALSE.
@@ -381,6 +382,7 @@ MODULE collisions
                IF (rfp .LT. PTCE) THEN
                   SKIP = .TRUE.
                   TIMESTEP_REAC = TIMESTEP_REAC + 1
+                  TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) = TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) + FNUM/VOL/DT
                   ! React
                   ECOLL = ECOLL - EA
 
@@ -807,10 +809,12 @@ MODULE collisions
             IF (rf() < P_REACT) THEN ! Collision happens
 
                TIMESTEP_COLL = TIMESTEP_COLL + 1
+               TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) = TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) + FNUM/VOL/DT
+               REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
                IF (EA .NE. 0.d0) THEN
-                  REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
                   TIMESTEP_REAC = TIMESTEP_REAC + 1
                END IF
+
                HAS_REACTED(JP1) = .TRUE.
                HAS_REACTED(JP2) = .TRUE.
 
@@ -1335,7 +1339,8 @@ MODULE collisions
       IMPLICIT NONE
 
       INTEGER      :: JP1, JP2, JR, I, J, SP_ID1, SP_ID2, P1_SP_ID, P2_SP_ID, P3_SP_ID, NP_PROC_INITIAL
-      REAL(KIND=8) :: P_COLL, PTCE, rfp, BG_NRHO
+      INTEGER      :: JC
+      REAL(KIND=8) :: P_COLL, PTCE, rfp, BG_NRHO, VOL
       REAL(KIND=8) :: SIGMA, OMEGA, CREF, ALPHA, FRAC, SIGMA_R
       REAL(KIND=8) :: PI2
       REAL(KIND=8), DIMENSION(3) :: C1, C2, GREL, W
@@ -1350,6 +1355,7 @@ MODULE collisions
 
       TIMESTEP_COLL = 0
       TIMESTEP_REAC = 0
+      TIMESTEP_REACTIONS = 0.d0
 
       NP_PROC_INITIAL = NP_PROC
       DO JP1 = 1,NP_PROC_INITIAL
@@ -1461,6 +1467,17 @@ MODULE collisions
                   IF (rfp .LT. PTCE) THEN
                      SKIP = .TRUE.
                      TIMESTEP_REAC = TIMESTEP_REAC + 1
+                     JC = particles(JP1)%IC
+                     IF (GRID_TYPE == RECTILINEAR_UNIFORM .AND. ((DIMS == 2) .OR. (DIMS == 0))) THEN
+                        VOL = CELL_VOL
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                        VOL = U1D_GRID%CELL_VOLUMES(JC)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                        VOL = U2D_GRID%CELL_VOLUMES(JC)
+                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
+                        VOL = U3D_GRID%CELL_VOLUMES(JC)
+                     END IF
+                     TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) = TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) + FNUM/VOL/DT
                      !WRITE(*,*) 'Reacting!'
                      ! React
                      ECOLL = ECOLL - EA
@@ -1683,10 +1700,11 @@ MODULE collisions
       IMPLICIT NONE
 
       INTEGER      :: JP1, JP2, JP3, JR, J, SP_ID1, SP_ID2, P1_SP_ID, P2_SP_ID, P3_SP_ID, P4_SP_ID, NP_PROC_INITIAL
-      REAL(KIND=8) :: BG_NRHO
+      INTEGER      :: JC
+      REAL(KIND=8) :: BG_NRHO, VOL
       REAL(KIND=8) :: FRAC, SIGMA_R
       REAL(KIND=8) :: PI2
-      REAL(KIND=8), DIMENSION(3) :: C1, C2
+      REAL(KIND=8), DIMENSION(3) :: C1, C2, W
       REAL(KIND=8) :: VR2, VR, MRED, M1, M2
       REAL(KIND=8) :: EI, ETR, ECOLL, TOTDOF, EA, EROT, EVIB
       TYPE(PARTICLE_DATA_STRUCTURE) :: NEWparticle
@@ -1697,6 +1715,7 @@ MODULE collisions
 
       TIMESTEP_COLL = 0
       TIMESTEP_REAC = 0
+      TIMESTEP_REACTIONS = 0.d0
 
       DO JR = 1, N_REACTIONS
          REACTIONS(JR)%COUNTS = 0
@@ -1782,8 +1801,19 @@ MODULE collisions
                IF (R_SELECT < P_CUMULATED) THEN ! Collision happens
 
                   TIMESTEP_COLL = TIMESTEP_COLL + 1
+                  JC = particles(JP1)%IC
+                  IF (GRID_TYPE == RECTILINEAR_UNIFORM .AND. ((DIMS == 2) .OR. (DIMS == 0))) THEN
+                     VOL = CELL_VOL
+                  ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                     VOL = U1D_GRID%CELL_VOLUMES(JC)
+                  ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                     VOL = U2D_GRID%CELL_VOLUMES(JC)
+                  ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
+                     VOL = U3D_GRID%CELL_VOLUMES(JC)
+                  END IF
+                  TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) = TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) + FNUM/VOL/DT
+                  REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
                   IF (EA .NE. 0.d0) THEN
-                     REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
                      TIMESTEP_REAC = TIMESTEP_REAC + 1
                   END IF
                   
@@ -1852,7 +1882,12 @@ MODULE collisions
                      EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, SPECIES(P2_SP_ID)%ROTDOF)
                      particles(JP2)%EROT = EI
                      ECOLL = ECOLL - EI
-      
+
+
+                     W = M1/(M1+M2)*C1 + M2/(M1+M2)*C2
+                     C1 = W
+                     C2 = W
+
                      M1 = SPECIES(P1_SP_ID)%MOLECULAR_MASS
                      IF (REACTIONS(JR)%N_PROD == 2) THEN
                         M2 = SPECIES(P2_SP_ID)%MOLECULAR_MASS

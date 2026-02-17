@@ -1284,7 +1284,7 @@ MODULE timecycle
                      EDGE_X1 = U2D_GRID%NODE_COORDS(1,U2D_GRID%CELL_NODES(I,IC))
                      EDGE_Y1 = U2D_GRID%NODE_COORDS(2,U2D_GRID%CELL_NODES(I,IC))
 
-                     IF (ABS(U2D_GRID%EDGE_NORMAL(2,I,IC)) < 1.d-10 ) THEN
+                     IF (ABS(U2D_GRID%EDGE_NORMAL(2,I,IC)) < 1.d-6 ) THEN
                         ! Vertical wall
                         SOL1 = (EDGE_X1 - particles(IP)%X)/particles(IP)%VX
                         IF (SOL1 >= 0 .AND. SOL1 < DTCOLL) THEN

@@ -667,6 +667,8 @@ MODULE global
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_TROT
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_TVIB
 
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_REACTIONS
+
    INTEGER                                 :: AVG_CUMULATED
    INTEGER, DIMENSION(:), ALLOCATABLE      :: AVG_CUMULATED_INTENSIVE_ONE
    INTEGER, DIMENSION(:), ALLOCATABLE      :: AVG_CUMULATED_INTENSIVE_TWO
@@ -677,6 +679,9 @@ MODULE global
    REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: AVG_PHI
 
    INTEGER                                 :: BOUNDARY_AVG_CUMULATED
+
+   REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_REACTIONS
+
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Average boundary !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
