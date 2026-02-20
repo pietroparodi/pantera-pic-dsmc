@@ -137,7 +137,7 @@ MODULE collisions
             IF (COLLISION_TYPE == DSMC) THEN
                ! DSMC temporarily broken because now arrays are per-species.
                CALL VSS_COLLIS(JC, NPCALL, IOFALL, INDALL, NCOLLREAL)
-            ELSE IF (COLLISION_TYPE == DSMC_VAHEDI) THEN
+            ELSE IF (COLLISION_TYPE == DSMC_VAHEDI .OR. COLLISION_TYPE == MCC_DSMC_VAHEDI) THEN
                CALL VAHEDI_COLLIS(JC, NPC, IOF, IND, NCOLLREAL, HAS_REACTED, REMOVE_PART)
             END IF
             ! Add to the total number of collisions for this process
@@ -1711,6 +1711,8 @@ MODULE collisions
       REAL(KIND=8) :: NULL_COLL_FREQ, P_NULL, R_SELECT, P_CUMULATED
       LOGICAL :: HAS_REACTED
 
+      REAL(KIND=8) :: ETRR1, ETRR2, ETRP1, ETRP2, ETRP3, ETRCOLL, EACOLL
+
       PI2 = 2*PI
 
       TIMESTEP_COLL = 0
@@ -1741,7 +1743,7 @@ MODULE collisions
             SP_ID2 = MIXTURES(MCC_BG_MIX)%COMPONENTS(J)%ID
 
             FRAC = MIXTURES(MCC_BG_MIX)%COMPONENTS(J)%MOLFRAC
-            BG_NRHO = FRAC*MCC_BG_DENS
+            BG_NRHO = FRAC*MCC_BG_DENS*(1.0 - 0.8*(particles(JP1)%X+0.125)/0.25)
 
             IF (BG_NRHO == 0) CYCLE
             
@@ -1773,6 +1775,8 @@ MODULE collisions
             ! Compute the kinetic energy in the center-of-mass frame (aka collision energy)
             ETR = 0.5*MRED*VR2
 
+            ETRCOLL = ETR
+
             P_CUMULATED = 0
 
             DO JR = 1, N_REACTIONS
@@ -1781,10 +1785,15 @@ MODULE collisions
                ! Check if species in collision belong to this reaction.
                ! If they don't, check the next reaction.
                ! Not very efficient with many reactions
-               IF ((REACTIONS(JR)%R1_SP_ID .NE. SP_ID1) .OR. (REACTIONS(JR)%R2_SP_ID .NE. SP_ID2)) CYCLE
-   
+
+               IF (( (REACTIONS(JR)%R1_SP_ID .NE. SP_ID1) .OR. (REACTIONS(JR)%R2_SP_ID .NE. SP_ID2) ) .AND. &
+                   ( (REACTIONS(JR)%R1_SP_ID .NE. SP_ID2) .OR. (REACTIONS(JR)%R2_SP_ID .NE. SP_ID1) )) CYCLE
+
                EA = REACTIONS(JR)%EA
                IF (ETR .LE. EA) CYCLE
+
+               EACOLL = EA
+               ETRR1 = 0.5*M1*(C1(1)**2 + C1(2)**2 + C1(3)**2)
 
                IF (REACTIONS(JR)%TYPE == FIXED_RATE) THEN
                   SIGMA_R = REACTIONS(JR)%CONSTANT_CS
@@ -1828,7 +1837,7 @@ MODULE collisions
                   CALL ADD_PARTICLE_ARRAY(NEWparticle, NP_PROC, particles)
                   JP2 = NP_PROC
 
-
+                  ETRR2 = 0.5*M2*(C2(1)**2 + C2(2)**2 + C2(3)**2)
 
                   ! Rimuovere commento per avere avviso
                   IF (P_CUMULATED .GT. 1.) THEN
@@ -1899,7 +1908,7 @@ MODULE collisions
                      END IF
                      TOTDOF = TOTDOF - 3.
                      IF (REACTIONS(JR)%N_PROD == 3) THEN
-                        EI = COLL_INTERNAL_ENERGY_EQUAL(ECOLL, TOTDOF, 3)
+                        EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, 3)
                      ELSE
                         EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, 3)
                      END IF
@@ -1910,6 +1919,7 @@ MODULE collisions
                      particles(JP1)%VY = C1(2)
                      particles(JP1)%VZ = C1(3)
 
+                     ETRP1 = 0.5*M1*(C1(1)**2 + C1(2)**2 + C1(3)**2)
       
                      IF (REACTIONS(JR)%N_PROD == 2) THEN
                         particles(JP2)%VX = C2(1)
@@ -1934,6 +1944,10 @@ MODULE collisions
                         particles(JP2)%VY = C1(2)
                         particles(JP2)%VZ = C1(3)
                               
+                        ETRP2 = 0.5*M1*(C1(1)**2 + C1(2)**2 + C1(3)**2)
+                        ETRP3 = 0.5*M2*(C2(1)**2 + C2(2)**2 + C2(3)**2)
+
+
                         
                         CALL INIT_PARTICLE(particles(JP2)%X,particles(JP2)%Y,particles(JP2)%Z, &
                         C2(1),C2(2),C2(3),EROT,EVIB,P3_SP_ID,particles(JP2)%IC,DT, NEWparticle)
@@ -2004,6 +2018,12 @@ MODULE collisions
                         CALL ADD_PARTICLE_ARRAY(NEWparticle, NP_PROC, particles)
                         
                      END IF
+                  END IF
+
+                  IF (JR == 3 .AND. PROC_ID == 0) THEN
+                     OPEN(66338, FILE='reaction_energies', POSITION='append', STATUS='unknown', ACTION='write')
+                     WRITE(66338,*) EACOLL, ETRCOLL, ETRR1, ETRR2, ETRP1, ETRP2, ETRP3
+                     CLOSE(66338)
                   END IF
 
                   ! If this pair had a chemical reaction, exit and don't test any other reaction.

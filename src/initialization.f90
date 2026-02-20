@@ -281,6 +281,8 @@ MODULE initialization
                COLLISION_TYPE = MCC_VAHEDI
             ELSE IF (COLLISION_TYPE_STRING == "DSMC_VAHEDI") THEN
                COLLISION_TYPE = DSMC_VAHEDI
+            ELSE IF (COLLISION_TYPE_STRING == "MCC_DSMC_VAHEDI") THEN
+               COLLISION_TYPE = MCC_DSMC_VAHEDI
             ELSE IF (COLLISION_TYPE_STRING == "BGK") THEN
                COLLISION_TYPE = BGK
             ELSE
@@ -472,7 +474,8 @@ MODULE initialization
          string = 'Collision type:'
          WRITE(*,'(A5,A50,I8)') '     ', string, COLLISION_TYPE
 
-         IF (COLLISION_TYPE == MCC .OR. COLLISION_TYPE == MCC_VAHEDI) THEN  ! Only print this if MCC collisions are ON
+         IF (COLLISION_TYPE == MCC .OR. COLLISION_TYPE == MCC_VAHEDI &
+             .OR. COLLISION_TYPE == MCC_DSMC_VAHEDI) THEN  ! Only print this if MCC collisions are ON
 
             string = 'Background number density [1/m^3]:'
             WRITE(*,'(A5,A50,ES14.3)') '     ', string, MCC_BG_DENS
@@ -2315,30 +2318,31 @@ MODULE initialization
       
       CLOSE(in3) ! Close input file
 
-      ! IF (PROC_ID == 0) THEN
-      !    DO index = 1, N_REACTIONS
-      !       WRITE(*,*) 'Reaction ', index, 'Has 2 reactants with ids:', REACTIONS(index)%R1_SP_ID, ' and ', &
-      !       REACTIONS(index)%R2_SP_ID
-      !       IF (REACTIONS(index)%N_PROD == 2) THEN
-      !          WRITE(*,*) REACTIONS(index)%N_PROD, 'products with ids:',  REACTIONS(index)%P1_SP_ID, ' and ', &
-      !          REACTIONS(index)%P2_SP_ID
-      !          IF (REACTIONS(index)%IS_CEX) WRITE(*,*) 'This is a CEX reaction'
-      !       ELSE IF (REACTIONS(index)%N_PROD == 3) THEN
-      !          WRITE(*,*) REACTIONS(index)%N_PROD, 'products with ids:',  REACTIONS(index)%P1_SP_ID, ', ', &
-      !          REACTIONS(index)%P2_SP_ID, ' and ', REACTIONS(index)%P3_SP_ID
-      !       END IF
-      !       IF (REACTIONS(index)%TYPE == TCE) THEN
-      !          WRITE(*,*) 'Parameters:', REACTIONS(index)%A, REACTIONS(index)%N, REACTIONS(index)%EA
-      !       ELSE IF (REACTIONS(index)%TYPE == LXCAT) THEN
-      !          WRITE(*,*) 'Reaction ', index, ' is from tabulated data in LxCat format.'
-      !          WRITE(*,*) 'Activation energy: ', REACTIONS(index)%EA
-      !          WRITE(*,*) 'Here are the energies (eV): ', REACTIONS(index)%TABLE_ENERGY
-      !          WRITE(*,*) 'And here are the cross sections (m^2): ', REACTIONS(index)%TABLE_CS
-      !       ELSE
-      !          WRITE(*,*) 'Reaction ', index, ' is not defined!'
-      !       END IF
-      !    END DO
-      ! END IF
+      IF (PROC_ID == 0) THEN
+         DO index = 1, N_REACTIONS
+            WRITE(*,*) 'Reaction ', index, 'Has 2 reactants with ids:', REACTIONS(index)%R1_SP_ID, ' and ', &
+            REACTIONS(index)%R2_SP_ID
+            IF (REACTIONS(index)%N_PROD == 2) THEN
+               WRITE(*,*) REACTIONS(index)%N_PROD, 'products with ids:',  REACTIONS(index)%P1_SP_ID, ' and ', &
+               REACTIONS(index)%P2_SP_ID
+               IF (REACTIONS(index)%IS_CEX) WRITE(*,*) 'This is a CEX reaction'
+            ELSE IF (REACTIONS(index)%N_PROD == 3) THEN
+               WRITE(*,*) REACTIONS(index)%N_PROD, 'products with ids:',  REACTIONS(index)%P1_SP_ID, ', ', &
+               REACTIONS(index)%P2_SP_ID, ' and ', REACTIONS(index)%P3_SP_ID
+            END IF
+            IF (REACTIONS(index)%TYPE == TCE) THEN
+               WRITE(*,*) 'Parameters:', REACTIONS(index)%A, REACTIONS(index)%N, REACTIONS(index)%EA
+            ELSE IF (REACTIONS(index)%TYPE == LXCAT) THEN
+               WRITE(*,*) 'Reaction ', index, ' is from tabulated data in LxCat format.'
+               WRITE(*,*) 'Activation energy: ', REACTIONS(index)%EA
+               WRITE(*,*) 'Energy from (eV): ', MINVAL(REACTIONS(index)%TABLE_ENERGY), ' to (eV) ', &
+               MAXVAL(REACTIONS(index)%TABLE_ENERGY)
+               WRITE(*,*) 'And max cross sections (m^2): ', MAXVAL(REACTIONS(index)%TABLE_CS)
+            ELSE
+               WRITE(*,*) 'Reaction ', index, ' is not defined!'
+            END IF
+         END DO
+      END IF
 
    END SUBROUTINE READ_REACTIONS
 
