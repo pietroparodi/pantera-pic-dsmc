@@ -52,7 +52,7 @@ MODULE initialization
       CLASS(VELOCITY_DISTRIBUTION_STRUCTURE), ALLOCATABLE :: TEMP_VDF_BOUND
 
       ! Open input file for reading
-      OPEN(UNIT=in1,FILE='input', STATUS='old',IOSTAT=ios)
+      OPEN(UNIT=in1,FILE='input.particle', STATUS='old',IOSTAT=ios)
 
       IF (ios.NE.0) THEN
          CALL ERROR_ABORT('Attention, "input" file not found! ABORTING.')
@@ -89,27 +89,25 @@ MODULE initialization
          IF (line=='Boundary_temperature:')    READ(in1,*) BOUNDTEMP
          IF (line=='Domain_react:')            READ(in1,*) BOOL_REACT
          IF (line=='Wall_reactions_file:') THEN
-            READ(in1,*) WALL_REACTIONS_FILENAME
+            READ(in1,'(A)') WALL_REACTIONS_FILENAME
             CALL READ_WALL_REACTIONS(WALL_REACTIONS_FILENAME)
          END IF
          IF (line=='Number_of_cells:')         READ(in1,*) NX, NY, NZ
 
          IF (line=='Grid_file:') THEN
-            READ(in1,*) GRID_FILENAME
+            READ(in1,'(A)') GRID_FILENAME
             CALL READ_GRID_FILE(GRID_FILENAME)
             GRID_TYPE = RECTILINEAR_NONUNIFORM
          END IF
 
          IF (line=='Mesh_file_SU2:') THEN
-            READ(in1,*) MESH_FILENAME
+            READ(in1,'(A)') MESH_FILENAME
             IF (DIMS == 1) THEN
                CALL READ_1D_UNSTRUCTURED_GRID_SU2(MESH_FILENAME)
             ELSE IF (DIMS == 2) THEN
                CALL READ_2D_UNSTRUCTURED_GRID_SU2(MESH_FILENAME)
             ELSE IF (DIMS == 3) THEN
                CALL READ_3D_UNSTRUCTURED_GRID_SU2(MESH_FILENAME)
-            ELSE
-               CALL ERROR_ABORT('Asked to read SU2 grid file but dimensions are not set to 2 or 3.')
             END IF
             GRID_TYPE = UNSTRUCTURED
          END IF
@@ -215,20 +213,22 @@ MODULE initialization
          
          ! ~~~~~~~~~~~~~  File output ~~~~~~~~~~~~~~~
 
-         IF (line=='Flowfield_output:')        READ(in1,*) FLOWFIELD_SAVE_PATH
-         IF (line=='Boundary_output:')         READ(in1,*) BOUNDARY_SAVE_PATH
-         IF (line=='Particle_dump_output:')    READ(in1,*) PARTDUMP_SAVE_PATH
-         IF (line=='Trajectory_dump_output:')  READ(in1,*) TRAJDUMP_SAVE_PATH
-         IF (line=='Fluxes_dump_output:')      READ(in1,*) FLUXDUMP_SAVE_PATH
-         IF (line=='Checks_output:')           READ(in1,*) CHECKS_SAVE_PATH
+         IF (line=='Flowfield_output:')        READ(in1,'(A)') FLOWFIELD_SAVE_PATH
+         IF (line=='Boundary_output:')         READ(in1,'(A)') BOUNDARY_SAVE_PATH
+         IF (line=='Particle_dump_output:')    READ(in1,'(A)') PARTDUMP_SAVE_PATH
+         IF (line=='Trajectory_dump_output:')  READ(in1,'(A)') TRAJDUMP_SAVE_PATH
+         IF (line=='Fluxes_dump_output:')      READ(in1,'(A)') FLUXDUMP_SAVE_PATH
+         IF (line=='Checks_output:')           READ(in1,'(A)') CHECKS_SAVE_PATH
+         IF (line=='Restart_path:')            READ(in1,'(A)') RESTART_PATH
          IF (line=='All_output_path:') THEN
-            READ(in1,*) FLOWFIELD_SAVE_PATH
+            READ(in1,'(A)') FLOWFIELD_SAVE_PATH
             CHECKS_SAVE_PATH = FLOWFIELD_SAVE_PATH
             FLUXDUMP_SAVE_PATH = FLOWFIELD_SAVE_PATH
             TRAJDUMP_SAVE_PATH = FLOWFIELD_SAVE_PATH
             PARTDUMP_SAVE_PATH = FLOWFIELD_SAVE_PATH
             RESIDUAL_SAVE_PATH = FLOWFIELD_SAVE_PATH
             BOUNDARY_SAVE_PATH = FLOWFIELD_SAVE_PATH
+            RESTART_PATH = FLOWFIELD_SAVE_PATH
          END IF
          IF (line=='Binary_output:')           READ(in1,*) BOOL_BINARY_OUTPUT
          IF (line=='Dump_part_every:')         READ(in1,*) DUMP_PART_EVERY
@@ -251,7 +251,7 @@ MODULE initialization
 
          IF (line=='Inject_from_file:') THEN
             BOOL_INJECT_FROM_FILE = .TRUE.
-            READ(in1,*) INJECT_FILENAME
+            READ(in1,'(A)') INJECT_FILENAME
             CALL READ_INJECT_FILE
          END IF
 
@@ -259,7 +259,7 @@ MODULE initialization
 
          ! ~~~~~~~~~~~~~  Multispecies ~~~~~~~~~~~~~~~
          IF (line=='Species_file:') THEN
-            READ(in1,*) SPECIES_FILENAME
+            READ(in1,'(A)') SPECIES_FILENAME
             CALL READ_SPECIES
          END IF
 
@@ -298,15 +298,15 @@ MODULE initialization
             MCC_BG_MIX = MIXTURE_NAME_TO_ID(MCC_BG_MIX_NAME)
          END IF
          IF (line=='MCC_background_file:') THEN
-            READ(in1,*) MCC_BG_FILENAME
+            READ(in1,'(A)') MCC_BG_FILENAME
             CALL READ_MCC_BACKGROUND_FILE(MCC_BG_FILENAME)
          END IF
          IF (line=='VSS_parameters_file:')     THEN
-            READ(in1,*) VSS_PARAMS_FILENAME
+            READ(in1,'(A)') VSS_PARAMS_FILENAME
             CALL READ_VSS(VSS_PARAMS_FILENAME)
          END IF
          IF (line=='VSS_parameters_binary_file:')     THEN
-            READ(in1,*) VSS_PARAMS_FILENAME
+            READ(in1,'(A)') VSS_PARAMS_FILENAME
             CALL READ_VSS_BINARY(VSS_PARAMS_FILENAME)
          END IF
          IF (line=='DSMC_collisions_mixture:') THEN
@@ -317,7 +317,7 @@ MODULE initialization
          
         ! ~~~~~~~~~~~~~  Reactions ~~~~~~~~~~~~~~~
          IF (line=='Reactions_file:') THEN
-            READ(in1,*) REACTIONS_FILENAME
+            READ(in1,'(A)') REACTIONS_FILENAME
             CALL READ_REACTIONS(REACTIONS_FILENAME)
          END IF
 
@@ -2338,6 +2338,10 @@ MODULE initialization
                WRITE(*,*) 'Energy from (eV): ', MINVAL(REACTIONS(index)%TABLE_ENERGY), ' to (eV) ', &
                MAXVAL(REACTIONS(index)%TABLE_ENERGY)
                WRITE(*,*) 'And max cross sections (m^2): ', MAXVAL(REACTIONS(index)%TABLE_CS)
+            ELSE IF (REACTIONS(index)%TYPE == FIXED_RATE) THEN
+               WRITE(*,*) 'Reaction ', index, ' has a constant cross section.'
+               WRITE(*,*) 'Activation energy: ', REACTIONS(index)%EA
+               WRITE(*,*) 'Cross section: ', REACTIONS(index)%CONSTANT_CS
             ELSE
                WRITE(*,*) 'Reaction ', index, ' is not defined!'
             END IF
@@ -3282,16 +3286,46 @@ MODULE initialization
    END SUBROUTINE INITREACTIONS
 
 
+   !=============================================================
+   ! Helper routine to read ASCII lines from stream file
+   !=============================================================
+   logical function read_line(unit, line)
+      integer, intent(in) :: unit
+      character(len=*), intent(out) :: line
+      integer :: ios
+      character(len=1) :: ch
+      integer :: i
+
+      line = ''
+      i = 1
+
+      do
+         read(unit, iostat=ios) ch
+         if (ios /= 0) then
+            read_line = .false.
+            return
+         end if
+
+         if (ch == new_line('a')) exit
+         if (i <= len(line)) then
+            line(i:i) = ch
+            i = i + 1
+         end if
+      end do
+
+      read_line = .true.
+   end function read_line
+
    SUBROUTINE READ_MCC_BACKGROUND_FILE(FILENAME)
 
       IMPLICIT NONE
 
       CHARACTER*512, INTENT(IN) :: FILENAME
-      CHARACTER*80      :: line
+      CHARACTER*30       :: line
       INTEGER, PARAMETER :: in5 = 5557
       INTEGER            :: ios
       INTEGER            :: ReasonEOF
-      INTEGER            :: N_STR, SP_ID, STAT
+      INTEGER            :: N_STR, SP_ID, STAT, IDX
       CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
 
       ! Open input file for reading
@@ -3308,42 +3342,72 @@ MODULE initialization
       END IF
 
       ALLOCATE(MCC_BG_CELL_NRHO(N_SPECIES, NCELLS))
+      ALLOCATE(MCC_BG_CELL_TTR(N_SPECIES, NCELLS))
+      ALLOCATE(MCC_BG_CELL_VX(N_SPECIES, NCELLS))
+      ALLOCATE(MCC_BG_CELL_VY(N_SPECIES, NCELLS))
+      ALLOCATE(MCC_BG_CELL_VZ(N_SPECIES, NCELLS))
 
       ! ++++++++ Read until the end of file ++++++++
-      IF (BOOL_BINARY_OUTPUT) THEN
-         DO
-            CALL SKIP_TO(in5, 'nrho_mean_', STAT)
-
+ 
+      DO
+         IF (BOOL_BINARY_OUTPUT) THEN
+            IF (.NOT. READ_LINE(in5, line)) EXIT
+         ELSE
             READ(in5, IOSTAT=ReasonEOF) line ! Read line
             IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+      
+         CALL SPLIT_STR(line, ' ', STRARRAY, N_STR)
 
-            SP_ID = SPECIES_NAME_TO_ID(line)
+         IF (STRARRAY(1)(1:10) == 'nrho_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(11:))
+            IF (PROC_ID == 0) WRITE(*,*) STRARRAY(1)(11:)
             IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
-
-            WRITE(*,*) 'Found data for species ', SP_ID
-            CALL SKIP_TO(in5, ACHAR(10), STAT)
-
+            IF (PROC_ID == 0) WRITE(*,*) 'Found n data for species ', SP_ID
             READ(in5, IOSTAT=ReasonEOF) MCC_BG_CELL_NRHO(SP_ID, :)
             IF (ReasonEOF < 0) EXIT ! End of file reached
-         END DO ! Loop for reading input file
-      ELSE
-         DO
-            READ(in5, IOSTAT=ReasonEOF) line ! Read line
-            CALL SPLIT_STR(line, ' ', STRARRAY, N_STR)
-            IF (STRARRAY(1)(1:10) == 'nrho_mean_') THEN
-               SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(11:))
-               IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+         END IF
 
-               WRITE(*,*) 'Found data for species ', SP_ID
-               READ(in5, IOSTAT=ReasonEOF) MCC_BG_CELL_NRHO(SP_ID, :)
-               IF (ReasonEOF < 0) EXIT ! End of file reached
-            END IF
-         END DO
-      END IF
+         IF (STRARRAY(1)(1:9) == 'Ttr_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(10:))
+            IF (PROC_ID == 0) WRITE(*,*) STRARRAY(1)(10:)
+            IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+            IF (PROC_ID == 0) WRITE(*,*) 'Found T data for species ', SP_ID
+            READ(in5, IOSTAT=ReasonEOF) MCC_BG_CELL_TTR(SP_ID, :)
+            IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+
+         IF (STRARRAY(1)(1:8) == 'vx_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(9:))
+            IF (PROC_ID == 0) WRITE(*,*) STRARRAY(1)(9:)
+            IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+            IF (PROC_ID == 0) WRITE(*,*) 'Found vx data for species ', SP_ID
+            READ(in5, IOSTAT=ReasonEOF) MCC_BG_CELL_VX(SP_ID, :)
+            IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+
+         IF (STRARRAY(1)(1:8) == 'vy_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(9:))
+            IF (PROC_ID == 0) WRITE(*,*) STRARRAY(1)(9:)
+            IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+            IF (PROC_ID == 0) WRITE(*,*) 'Found vy data for species ', SP_ID
+            READ(in5, IOSTAT=ReasonEOF) MCC_BG_CELL_VY(SP_ID, :)
+            IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+
+         IF (STRARRAY(1)(1:8) == 'vz_mean_') THEN
+            SP_ID = SPECIES_NAME_TO_ID(STRARRAY(1)(9:))
+            IF (PROC_ID == 0) WRITE(*,*) STRARRAY(1)(9:)
+            IF (SP_ID == -1) CALL ERROR_ABORT('Error! Species in MCC background vtk file not found.')
+            IF (PROC_ID == 0) WRITE(*,*) 'Found vz data for species ', SP_ID
+            READ(in5, IOSTAT=ReasonEOF) MCC_BG_CELL_VZ(SP_ID, :)
+            IF (ReasonEOF < 0) EXIT ! End of file reached
+         END IF
+      END DO
 
       CLOSE(in5) ! Close input file
 
-      BOOL_BG_DENSITY_FILE = .TRUE.
+      BOOL_MCC_BG_FILE = .TRUE.
 
       WRITE(*,*) 'Done reading.'
 

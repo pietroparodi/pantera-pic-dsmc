@@ -454,7 +454,9 @@ MODULE postprocess
       INTEGER, DIMENSION(:), ALLOCATABLE :: CELL_PROC_ID
 
       REAL(KIND=8) :: SPWT
+      REAL(KIND=8) :: CURRENT_TIME
 
+      CURRENT_TIME = tID*DT
 
       MOMENT_STRING = ['rho_   ', &
                         'Ux_    ', 'Uy_    ', 'Uz_    ', &
@@ -510,6 +512,10 @@ MODULE postprocess
             IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
                WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
 
+               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+               WRITE(54321) CURRENT_TIME
+
                WRITE(54321) 'POINTS '//ITOA(U1D_GRID%NUM_NODES)//' double'//ACHAR(10)
                DO I = 1, U1D_GRID%NUM_NODES
                   WRITE(54321) U1D_GRID%NODE_COORDS(:,I)
@@ -526,6 +532,10 @@ MODULE postprocess
                END DO
             ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
                WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
+
+               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+               WRITE(54321) CURRENT_TIME
 
                WRITE(54321) 'POINTS '//ITOA(U2D_GRID%NUM_NODES)//' double'//ACHAR(10)
                DO I = 1, U2D_GRID%NUM_NODES
@@ -544,6 +554,10 @@ MODULE postprocess
             ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
                WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
 
+               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+               WRITE(54321) CURRENT_TIME
+
                WRITE(54321) 'POINTS '//ITOA(U3D_GRID%NUM_NODES)//' double'//ACHAR(10)
                DO I = 1, U3D_GRID%NUM_NODES
                   WRITE(54321) U3D_GRID%NODE_COORDS(:,I)
@@ -560,6 +574,10 @@ MODULE postprocess
                END DO
             ELSE IF (DIMS == 0) THEN
                WRITE(54321) 'DATASET RECTILINEAR_GRID'//ACHAR(10)
+
+               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+               WRITE(54321) CURRENT_TIME
                
                WRITE(54321) 'DIMENSIONS '//ITOA(NX+1)//' '//ITOA(NY+1)//' '//ITOA(NZ+1)//ACHAR(10)
 
@@ -573,6 +591,10 @@ MODULE postprocess
                WRITE(54321) ZNODES, ACHAR(10)
             ELSE IF (DIMS == 1) THEN
                WRITE(54321) 'DATASET RECTILINEAR_GRID'//ACHAR(10)
+
+               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+               WRITE(54321) CURRENT_TIME
                
                WRITE(54321) 'DIMENSIONS '//ITOA(NX+1)//' '//ITOA(1)//' '//ITOA(1)//ACHAR(10)
 
@@ -586,6 +608,10 @@ MODULE postprocess
                WRITE(54321) 0.d0, ACHAR(10)
             ELSE IF (DIMS == 2) THEN
                WRITE(54321) 'DATASET RECTILINEAR_GRID'//ACHAR(10)
+
+               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+               WRITE(54321) CURRENT_TIME
                
                WRITE(54321) 'DIMENSIONS '//ITOA(NX+1)//' '//ITOA(NY+1)//' '//ITOA(1)//ACHAR(10)
 
@@ -798,6 +824,10 @@ MODULE postprocess
 
             IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
                WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+               WRITE(54321,'(A)') 'FIELD FieldData 1'
+               WRITE(54321,'(A)') 'TIME 1 1 double'
+               WRITE(54321,*) CURRENT_TIME
                
                WRITE(54321,'(A,I10,A7)') 'POINTS', U1D_GRID%NUM_NODES, 'double'
                DO I = 1, U1D_GRID%NUM_NODES
@@ -815,6 +845,10 @@ MODULE postprocess
                END DO
             ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
                WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+               WRITE(54321,'(A)') 'FIELD FieldData 1'
+               WRITE(54321,'(A)') 'TIME 1 1 double'
+               WRITE(54321,*) CURRENT_TIME
                
                WRITE(54321,'(A,I10,A7)') 'POINTS', U2D_GRID%NUM_NODES, 'double'
                DO I = 1, U2D_GRID%NUM_NODES
@@ -832,6 +866,10 @@ MODULE postprocess
                END DO
             ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
                WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+               WRITE(54321,'(A)') 'FIELD FieldData 1'
+               WRITE(54321,'(A)') 'TIME 1 1 double'
+               WRITE(54321,*) CURRENT_TIME
                
                WRITE(54321,'(A,I10,A7)') 'POINTS', U3D_GRID%NUM_NODES, 'double'
                DO I = 1, U3D_GRID%NUM_NODES
@@ -850,6 +888,10 @@ MODULE postprocess
 
             ELSE IF (DIMS == 0) THEN
                WRITE(54321,'(A)') 'DATASET RECTILINEAR_GRID'
+
+               WRITE(54321,'(A)') 'FIELD FieldData 1'
+               WRITE(54321,'(A)') 'TIME 1 1 double'
+               WRITE(54321,*) CURRENT_TIME
                
                WRITE(54321,'(A,I10,I10,I10)') 'DIMENSIONS', NX+1, NY+1, NZ+1
 
@@ -863,6 +905,10 @@ MODULE postprocess
                WRITE(54321,*) ZNODES
             ELSE IF (DIMS == 1) THEN
                WRITE(54321,'(A)') 'DATASET RECTILINEAR_GRID'
+
+               WRITE(54321,'(A)') 'FIELD FieldData 1'
+               WRITE(54321,'(A)') 'TIME 1 1 double'
+               WRITE(54321,*) CURRENT_TIME
                
                WRITE(54321,'(A,I10,I10,I10)') 'DIMENSIONS', NX+1, NY+1, 1 
 
@@ -876,6 +922,10 @@ MODULE postprocess
                WRITE(54321,*) 0.
             ELSE IF (DIMS == 2) THEN
                WRITE(54321,'(A)') 'DATASET RECTILINEAR_GRID'
+
+               WRITE(54321,'(A)') 'FIELD FieldData 1'
+               WRITE(54321,'(A)') 'TIME 1 1 double'
+               WRITE(54321,*) CURRENT_TIME
                
                WRITE(54321,'(A,I10,I10,I10)') 'DIMENSIONS', NX+1, NY+1, 1 
 
@@ -1392,6 +1442,9 @@ MODULE postprocess
 
       INTEGER                            :: I, JS, FIRST, LAST
 
+      REAL(KIND=8) :: CURRENT_TIME
+
+      CURRENT_TIME = tID*DT
 
       IF (PROC_ID .EQ. 0) THEN
          
@@ -1410,6 +1463,10 @@ MODULE postprocess
             IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
                WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
 
+               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+               WRITE(54321) CURRENT_TIME
+
                WRITE(54321) 'POINTS '//ITOA(U0D_GRID%NUM_NODES)//' double'//ACHAR(10)
                DO I = 1, U0D_GRID%NUM_NODES
                   WRITE(54321) U0D_GRID%NODE_COORDS(:,I)
@@ -1427,6 +1484,10 @@ MODULE postprocess
             ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
                WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
 
+               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+               WRITE(54321) CURRENT_TIME
+
                WRITE(54321) 'POINTS '//ITOA(U1D_GRID%NUM_NODES)//' double'//ACHAR(10)
                DO I = 1, U1D_GRID%NUM_NODES
                   WRITE(54321) U1D_GRID%NODE_COORDS(:,I)
@@ -1443,6 +1504,10 @@ MODULE postprocess
                END DO
             ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
                WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
+
+               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+               WRITE(54321) CURRENT_TIME
 
                WRITE(54321) 'POINTS '//ITOA(U2D_GRID%NUM_NODES)//' double'//ACHAR(10)
                DO I = 1, U2D_GRID%NUM_NODES
@@ -1560,6 +1625,10 @@ MODULE postprocess
 
             IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
                WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+               WRITE(54321,'(A)') 'FIELD FieldData 1'
+               WRITE(54321,'(A)') 'TIME 1 1 double'
+               WRITE(54321,*) CURRENT_TIME
                
                WRITE(54321,'(A,I10,A7)') 'POINTS', U0D_GRID%NUM_NODES, 'double'
                DO I = 1, U0D_GRID%NUM_NODES
@@ -1577,6 +1646,10 @@ MODULE postprocess
                END DO
             ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
                WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+               WRITE(54321,'(A)') 'FIELD FieldData 1'
+               WRITE(54321,'(A)') 'TIME 1 1 double'
+               WRITE(54321,*) CURRENT_TIME
                
                WRITE(54321,'(A,I10,A7)') 'POINTS', U1D_GRID%NUM_NODES, 'double'
                DO I = 1, U1D_GRID%NUM_NODES
@@ -1594,6 +1667,10 @@ MODULE postprocess
                END DO
             ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
                WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+               WRITE(54321,'(A)') 'FIELD FieldData 1'
+               WRITE(54321,'(A)') 'TIME 1 1 double'
+               WRITE(54321,*) CURRENT_TIME
                
                WRITE(54321,'(A,I10,A7)') 'POINTS', U2D_GRID%NUM_NODES, 'double'
                DO I = 1, U2D_GRID%NUM_NODES

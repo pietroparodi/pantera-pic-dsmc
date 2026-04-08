@@ -1340,7 +1340,7 @@ MODULE collisions
 
       INTEGER      :: JP1, JP2, JR, I, J, SP_ID1, SP_ID2, P1_SP_ID, P2_SP_ID, P3_SP_ID, NP_PROC_INITIAL
       INTEGER      :: JC
-      REAL(KIND=8) :: P_COLL, PTCE, rfp, BG_NRHO, VOL
+      REAL(KIND=8) :: P_COLL, PTCE, rfp, BG_NRHO, BG_TTR, VOL
       REAL(KIND=8) :: SIGMA, OMEGA, CREF, ALPHA, FRAC, SIGMA_R
       REAL(KIND=8) :: PI2
       REAL(KIND=8), DIMENSION(3) :: C1, C2, GREL, W
@@ -1364,11 +1364,13 @@ MODULE collisions
          DO J = 1, MIXTURES(MCC_BG_MIX)%N_COMPONENTS
             SP_ID2 = MIXTURES(MCC_BG_MIX)%COMPONENTS(J)%ID
 
-            IF (BOOL_BG_DENSITY_FILE) THEN
+            IF (BOOL_MCC_BG_FILE) THEN
                BG_NRHO = MCC_BG_CELL_NRHO(SP_ID2, particles(JP1)%IC)
+               BG_TTR = MCC_BG_CELL_TTR(SP_ID2, particles(JP1)%IC)
             ELSE
                FRAC = MIXTURES(MCC_BG_MIX)%COMPONENTS(J)%MOLFRAC
-               BG_NRHO = FRAC*MCC_BG_DENS
+               BG_NRHO = FRAC*MCC_BG_DENS*(1.0 - 0.8*(particles(JP1)%X+0.125)/0.25)
+               BG_TTR = MCC_BG_TTRA
             END IF
             IF (BG_NRHO == 0) CYCLE
             
@@ -1383,7 +1385,7 @@ MODULE collisions
             ! Sample the velocity of second collision partner, that would be in the MCC backgorund
             ! This may bias collisions towards higher temperatures of particle 2!
             CALL MAXWELL(0.d0, 0.d0, 0.d0, &
-            MCC_BG_TTRA, MCC_BG_TTRA, MCC_BG_TTRA, &
+            BG_TTR, BG_TTR, BG_TTR, &
             C2(1), C2(2), C2(3), SPECIES(SP_ID2)%MOLECULAR_MASS)
 
             ! Compute the real relative velocity
@@ -1412,8 +1414,8 @@ MODULE collisions
                C1(3) = particles(JP1)%VZ
 
                ! Actually create the second collision partner
-               CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%ROTDOF, MCC_BG_TTRA, EROT)
-               CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%VIBDOF, MCC_BG_TTRA, EVIB)
+               CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%ROTDOF, BG_TTR, EROT)
+               CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%VIBDOF, BG_TTR, EVIB)
                CALL INIT_PARTICLE(particles(JP1)%X,particles(JP1)%Y,particles(JP1)%Z, &
                C2(1),C2(2),C2(3),EROT,EVIB,SP_ID2,particles(JP1)%IC,DT, NEWparticle)
                !WRITE(*,*) 'Should be adding particle!'
@@ -1701,7 +1703,7 @@ MODULE collisions
 
       INTEGER      :: JP1, JP2, JP3, JR, J, SP_ID1, SP_ID2, P1_SP_ID, P2_SP_ID, P3_SP_ID, P4_SP_ID, NP_PROC_INITIAL
       INTEGER      :: JC
-      REAL(KIND=8) :: BG_NRHO, VOL
+      REAL(KIND=8) :: BG_NRHO, BG_TTR, VOL
       REAL(KIND=8) :: FRAC, SIGMA_R
       REAL(KIND=8) :: PI2
       REAL(KIND=8), DIMENSION(3) :: C1, C2, W
@@ -1742,15 +1744,21 @@ MODULE collisions
          DO J = 1, MIXTURES(MCC_BG_MIX)%N_COMPONENTS
             SP_ID2 = MIXTURES(MCC_BG_MIX)%COMPONENTS(J)%ID
 
-            FRAC = MIXTURES(MCC_BG_MIX)%COMPONENTS(J)%MOLFRAC
-            BG_NRHO = FRAC*MCC_BG_DENS*(1.0 - 0.8*(particles(JP1)%X+0.125)/0.25)
+            IF (BOOL_MCC_BG_FILE) THEN
+               BG_NRHO = MCC_BG_CELL_NRHO(SP_ID2, particles(JP1)%IC)
+               BG_TTR = MCC_BG_CELL_TTR(SP_ID2, particles(JP1)%IC)
+            ELSE
+               FRAC = MIXTURES(MCC_BG_MIX)%COMPONENTS(J)%MOLFRAC
+               BG_NRHO = FRAC*MCC_BG_DENS
+               BG_TTR = MCC_BG_TTRA
+            END IF
 
             IF (BG_NRHO == 0) CYCLE
             
             ! Sample the velocity of second collision partner, that would be in the MCC backgorund
             ! This may bias collisions towards higher temperatures of particle 2!
             CALL MAXWELL(0.d0, 0.d0, 0.d0, &
-            MCC_BG_TTRA, MCC_BG_TTRA, MCC_BG_TTRA, &
+            BG_TTR, BG_TTR, BG_TTR, &
             C2(1), C2(2), C2(3), SPECIES(SP_ID2)%MOLECULAR_MASS)
 
             ! Compute the real relative velocity
@@ -1828,8 +1836,8 @@ MODULE collisions
                   
 
                   ! Actually create the second collision partner
-                  CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%ROTDOF, MCC_BG_TTRA, EROT)
-                  CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%VIBDOF, MCC_BG_TTRA, EVIB)
+                  CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%ROTDOF, BG_TTR, EROT)
+                  CALL INTERNAL_ENERGY(SPECIES(SP_ID2)%VIBDOF, BG_TTR, EVIB)
                   CALL INIT_PARTICLE(particles(JP1)%X,particles(JP1)%Y,particles(JP1)%Z, &
                   C2(1),C2(2),C2(3),EROT,EVIB,SP_ID2,particles(JP1)%IC,DT, NEWparticle)
 
@@ -2020,7 +2028,7 @@ MODULE collisions
                      END IF
                   END IF
 
-                  IF (JR == 3 .AND. PROC_ID == 0) THEN
+                  IF (JR == 3 .AND. PROC_ID == 0 .AND. .FALSE.) THEN
                      OPEN(66338, FILE='reaction_energies', POSITION='append', STATUS='unknown', ACTION='write')
                      WRITE(66338,*) EACOLL, ETRCOLL, ETRR1, ETRR2, ETRP1, ETRP2, ETRP3
                      CLOSE(66338)

@@ -418,7 +418,7 @@ CONTAINS
       INTEGER      :: S_ID, IC
       TYPE(PARTICLE_DATA_STRUCTURE) :: particleNOW
       character(len=100) :: iomsg
-      WRITE(filename, "(A,A,I0.5,A6,I0.8)") TRIM(ADJUSTL(PARTDUMP_SAVE_PATH)), "proc_", PROC_ID, "_time_", TIMESTEP ! Compose filename
+      WRITE(filename, "(A,A,I0.5,A6,I0.8)") TRIM(ADJUSTL(RESTART_PATH)), "proc_", PROC_ID, "_time_", TIMESTEP ! Compose filename
 
       ! Open file for reading
       IF (BOOL_BINARY_OUTPUT) THEN
