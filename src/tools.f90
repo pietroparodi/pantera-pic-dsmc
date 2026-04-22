@@ -990,6 +990,100 @@ CONTAINS
 
 
 
+
+   SUBROUTINE READ_RESTART(TIMESTEP)
+
+      IMPLICIT NONE
+
+      INTEGER, INTENT(IN) :: TIMESTEP
+      CHARACTER(LEN=512)  :: filename
+      INTEGER :: ios
+
+      character(len=100) :: iomsg
+
+      IF (.NOT. ALLOCATED(SURFACE_CHARGE)) CALL ERROR_ABORT('Error! SURFACE_CHARGE not allocated.')
+
+      WRITE(filename, "(A,A8,I0.8)") TRIM(ADJUSTL(RESTART_PATH)), "restart_", TIMESTEP ! Compose filename
+
+      ! Open file for reading
+      WRITE(*,*) 'Opening file ', TRIM(filename), ' for restart.'
+
+      IF (BOOL_BINARY_OUTPUT) THEN
+         OPEN(1025, FILE=filename, ACCESS='STREAM', FORM='UNFORMATTED', STATUS='OLD', &
+         CONVERT='BIG_ENDIAN', IOSTAT=ios, IOMSG=iomsg)
+
+         IF (ios .NE. 0) THEN
+            WRITE(*,*) 'iomsg was: ', iomsg
+            CALL ERROR_ABORT('Attention, restart file not found! ABORTING.')
+         ENDIF
+
+         READ(1025, IOSTAT=ios) SURFACE_CHARGE
+
+         CLOSE(1025)
+      ELSE
+         OPEN(1025, FILE=filename, STATUS='OLD', IOSTAT=ios)
+         
+         IF (ios .NE. 0) THEN
+            CALL ERROR_ABORT('Attention, restart file not found! ABORTING.')
+         ENDIF
+
+         READ(1025,*,IOSTAT=ios) SURFACE_CHARGE
+
+         CLOSE(1025)
+      END IF
+
+   END SUBROUTINE READ_RESTART
+
+
+
+   SUBROUTINE WRITE_RESTART(TIMESTEP)
+
+      IMPLICIT NONE
+
+      INTEGER, intent(in) :: TIMESTEP
+      INTEGER :: ios
+
+      character(len=100) :: iomsg
+
+      CHARACTER(LEN=512)  :: filename
+
+      IF (PROC_ID == 0) THEN
+
+         IF (.NOT. ALLOCATED(SURFACE_CHARGE)) CALL ERROR_ABORT('Error! SURFACE_CHARGE not allocated.')
+
+         WRITE(filename, "(A,A8,I0.8)") TRIM(ADJUSTL(FLOWFIELD_SAVE_PATH)), "restart_", TIMESTEP ! Compose filename
+
+         ! Open file for writing
+         IF (BOOL_BINARY_OUTPUT) THEN
+            OPEN(1010, FILE=filename, ACCESS='STREAM', FORM='UNFORMATTED', STATUS='NEW', &
+            CONVERT='BIG_ENDIAN', IOSTAT=ios, IOMSG=iomsg)
+
+            IF (ios .NE. 0) THEN
+               CALL ERROR_ABORT('Attention, could not open restart file for writing! ABORTING.')
+            ENDIF
+
+            WRITE(1010, IOSTAT=ios) SURFACE_CHARGE
+            !IF (ios < 0) EXIT
+
+            CLOSE(1010)
+         ELSE
+            OPEN(1010, FILE=filename, STATUS='OLD', IOSTAT=ios)
+            
+            IF (ios .NE. 0) THEN
+               CALL ERROR_ABORT('Attention, could not open restart file for writing! ABORTING.')
+            ENDIF
+
+            WRITE(1010,*,IOSTAT=ios) SURFACE_CHARGE
+            !IF (ios < 0) EXIT
+
+            CLOSE(1010)
+         END IF
+
+      END IF
+
+   END SUBROUTINE WRITE_RESTART
+
+
    SUBROUTINE DUPLICATE_PARTICLES
 
       IMPLICIT NONE

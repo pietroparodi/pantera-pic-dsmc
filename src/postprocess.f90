@@ -1913,10 +1913,10 @@ MODULE postprocess
 
       IMPLICIT NONE
 
-      INTEGER                            :: JP, JS, JC, JR
+      INTEGER                            :: JP, JS, JC, JR, I
    
       INTEGER, ALLOCATABLE, DIMENSION(:) :: TOT_NUM, TOT_REACT_COUNTS
-      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: TOT_EE_PART, TOT_KE_PART
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: TOT_EE_PART, TOT_KE_PART, ALL_DISPCURR
 
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:) :: TOT_MOMENTUM
       REAL(KIND=8)                       :: TOT_KE, TOT_IE, TOT_FE, TOT_EE_FIELD, PHI, CURRENT_TIME, FIELD_POWER_TOT
@@ -2025,6 +2025,11 @@ MODULE postprocess
          ! WRITE(*,*) 'Total energy:          ', TOT_KE+TOT_IE+TOT_FE+TOT_EE, ' [J]'
          ! WRITE(*,*) ' '
 
+         ALLOCATE(ALL_DISPCURR(N_GRID_BC))
+         DO I = 1, N_GRID_BC
+            ALL_DISPCURR(I) = GRID_BC(I)%DISPLACEMENT_CURRENT
+         END DO
+
          WRITE(file_name,'(A, A)') TRIM(ADJUSTL(CHECKS_SAVE_PATH)), 'conservation_checks'
 
          INQUIRE(FILE=file_name, EXIST=FILE_EXISTS)
@@ -2053,6 +2058,9 @@ MODULE postprocess
             DO JS = 1, N_REACTIONS
                HEADER_STRING = TRIM(HEADER_STRING) // ' nreact_' // ITOA(JS)
             END DO
+            DO JS = 1, N_GRID_BC
+               HEADER_STRING = TRIM(HEADER_STRING) // ' dispcurr_' // TRIM(GRID_BC(JS)%PHYSICAL_GROUP_NAME)
+            END DO
 
             WRITE(54331,*) TRIM(HEADER_STRING)
          END IF
@@ -2060,7 +2068,10 @@ MODULE postprocess
          WRITE(54331,*) CURRENT_TIME, TOT_NUM, TOT_MOMENTUM, SUM(TOT_MOMENTUM, DIM=2), &
          TOT_KE_PART, TOT_IE, TOT_EE_PART,TOT_EE_FIELD, &
          SUM(TOT_KE_PART) + TOT_IE + TOT_EE_FIELD, &
-         FIELD_POWER_TOT, COIL_CURRENT, TOT_REACT_COUNTS !TOT_FE, TOT_EE
+         FIELD_POWER_TOT, COIL_CURRENT, TOT_REACT_COUNTS, & !TOT_FE, TOT_EE
+         ALL_DISPCURR
+
+         DEALLOCATE(ALL_DISPCURR)
          CLOSE(54331)
 
       ELSE

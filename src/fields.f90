@@ -5651,8 +5651,6 @@ MODULE fields
          END IF
       END DO
 
-      RHS = RHS + SURFACE_CHARGE
-
       SIZE = NNODES
 
       IF (PROC_ID .EQ. 0) THEN
@@ -5663,6 +5661,7 @@ MODULE fields
 
       CALL MPI_BCAST(RHS, SIZE, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
+      RHS = RHS + SURFACE_CHARGE
 
       DO I = Istart, Iend-1
          IF (IS_DIRICHLET(I)) THEN
@@ -7034,5 +7033,51 @@ MODULE fields
       END DO
 
    END SUBROUTINE COMPUTE_FLOATING_POTENTIAL_FOR_CONDUCTIVE_SURFACE
+
+
+   SUBROUTINE COMPUTE_DISPLACEMENT_CURRENT
+
+      IMPLICIT NONE
+
+      REAL(KIND=8) :: EDOTN, EPS_REL
+      INTEGER :: IC, IP, FACE_PG, VOL_PG
+
+
+      DO FACE_PG = 1, N_GRID_BC
+         GRID_BC(FACE_PG)%EDOTA = 0.d0
+      END DO
+
+      IF (DIMS == 2) THEN
+         DO IC = 1, NCELLS
+            DO IP = 1, 3
+               FACE_PG = U2D_GRID%CELL_EDGES_PG(IP, IC)
+               IF (FACE_PG == -1) CYCLE
+               IF (GRID_BC(FACE_PG)%FIELD_BC .NE. NO_BC) THEN
+
+                  VOL_PG = U2D_GRID%CELL_PG(IC)
+                  IF (VOL_PG == -1) THEN
+                     EPS_REL = 1.d0
+                  ELSE
+                     EPS_REL = GRID_BC(VOL_PG)%EPS_REL
+                  END IF
+
+                  ! Save the integral of E dot dA
+                  EDOTN = E_FIELD(1,1,IC) * U2D_GRID%EDGE_NORMAL(1,IP,IC) &
+                        + E_FIELD(2,1,IC) * U2D_GRID%EDGE_NORMAL(2,IP,IC)
+
+                  GRID_BC(FACE_PG)%EDOTA = GRID_BC(FACE_PG)%EDOTA &
+                  + EDOTN * U2D_GRID%CELL_EDGES_LEN(IP, IC) * EPS0 * EPS_REL
+
+               END IF
+            END DO
+         END DO
+      END IF
+
+      DO FACE_PG = 1, N_GRID_BC
+         GRID_BC(FACE_PG)%DISPLACEMENT_CURRENT = (GRID_BC(FACE_PG)%EDOTA - GRID_BC(FACE_PG)%LAST_EDOTA)/DT
+         GRID_BC(FACE_PG)%LAST_EDOTA = GRID_BC(FACE_PG)%EDOTA
+      END DO
+
+   END SUBROUTINE
 
 END MODULE fields

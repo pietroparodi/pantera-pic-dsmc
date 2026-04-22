@@ -280,6 +280,8 @@ MODULE timecycle
             
          END IF
 
+         IF (PIC_TYPE .NE. NONE) CALL COMPUTE_DISPLACEMENT_CURRENT
+
          ! ########### Exchange particles among processes ##########################
 
          CALL TIMER_START(5)
@@ -318,6 +320,11 @@ MODULE timecycle
          ! ########### Dump particles ##############################################
          IF (tID .GE. DUMP_PART_START) THEN
             IF (MOD(tID-DUMP_PART_START, DUMP_PART_EVERY) .EQ. 0) CALL DUMP_PARTICLES_FILE(tID)
+         END IF
+
+         ! ########### Dump restart ##############################################
+         IF (tID .GE. DUMP_RESTART_START) THEN
+            IF (MOD(tID-DUMP_RESTART_START, DUMP_RESTART_EVERY) .EQ. 0) CALL WRITE_RESTART(tID)
          END IF
 
          ! ########### Dump flowfield ##############################################
@@ -1195,6 +1202,8 @@ MODULE timecycle
       INTEGER :: NEIGHBORPG
       REAL(KIND=8) :: CHARGE, K, PSIP, RHO_Q, SPWT
       INTEGER :: VP
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: SURFACE_CHARGE_STEP
+
 
       REAL(KIND=8) :: VXPRE, VYPRE, VZPRE
       REAL(KIND=8) :: XI_PRE, XI_POST, P_REINJECTION
@@ -1223,6 +1232,9 @@ MODULE timecycle
       LOCAL_WALL_COLL_COUNT = 0
 
       FIELD_POWER = 0
+
+      ALLOCATE(SURFACE_CHARGE_STEP(NNODES))
+      SURFACE_CHARGE_STEP = 0.d0
 
       ! OPEN(66341, FILE='washboarddump', POSITION='append', STATUS='unknown', ACTION='write')
 
@@ -1604,7 +1616,7 @@ MODULE timecycle
                                     PSIP = U1D_GRID%BASIS_COEFFS(1,I,IC)*particles(IP)%X &
                                        + U1D_GRID%BASIS_COEFFS(2,I,IC)
                                  END IF
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
+                                 SURFACE_CHARGE_STEP(VP) = SURFACE_CHARGE_STEP(VP) + RHO_Q*PSIP
                               END DO
 
                            ELSE IF (DIMS == 2) THEN
@@ -1614,7 +1626,7 @@ MODULE timecycle
                                  PSIP = U2D_GRID%BASIS_COEFFS(1,I,IC)*particles(IP)%X &
                                       + U2D_GRID%BASIS_COEFFS(2,I,IC)*particles(IP)%Y &
                                       + U2D_GRID%BASIS_COEFFS(3,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
+                                 SURFACE_CHARGE_STEP(VP) = SURFACE_CHARGE_STEP(VP) + RHO_Q*PSIP
                               END DO
                               
                            ELSE IF (DIMS == 3) THEN
@@ -1625,7 +1637,7 @@ MODULE timecycle
                                       + U3D_GRID%BASIS_COEFFS(2,I,IC)*particles(IP)%Y &
                                       + U3D_GRID%BASIS_COEFFS(3,I,IC)*particles(IP)%Z &
                                       + U3D_GRID%BASIS_COEFFS(4,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
+                                 SURFACE_CHARGE_STEP(VP) = SURFACE_CHARGE_STEP(VP) + RHO_Q*PSIP
                               END DO
                            END IF
                         ELSE IF (GRID_BC(FACE_PG)%FIELD_BC == SPICE_NODE_BC .AND. ABS(CHARGE) .GE. 1.d-6) THEN
@@ -2424,6 +2436,22 @@ MODULE timecycle
             NP_DUMP_PROC = 0
          END IF
       END IF
+
+
+
+      IF (PROC_ID .EQ. 0) THEN
+         CALL MPI_REDUCE(MPI_IN_PLACE, SURFACE_CHARGE_STEP, NNODES, &
+         MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      ELSE
+         CALL MPI_REDUCE(SURFACE_CHARGE_STEP, SURFACE_CHARGE_STEP, NNODES, &
+         MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      END IF
+
+      CALL MPI_BCAST(SURFACE_CHARGE_STEP, NNODES, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
+      SURFACE_CHARGE = SURFACE_CHARGE + SURFACE_CHARGE_STEP
+
+      DEALLOCATE(SURFACE_CHARGE_STEP)
 
 
       !CLOSE(66341)

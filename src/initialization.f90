@@ -233,6 +233,8 @@ MODULE initialization
          IF (line=='Binary_output:')           READ(in1,*) BOOL_BINARY_OUTPUT
          IF (line=='Dump_part_every:')         READ(in1,*) DUMP_PART_EVERY
          IF (line=='Dump_part_start:')         READ(in1,*) DUMP_PART_START
+         IF (line=='Dump_restart_every:')      READ(in1,*) DUMP_RESTART_EVERY
+         IF (line=='Dump_restart_start:')      READ(in1,*) DUMP_RESTART_START
          IF (line=='Dump_part_fracsample:')    READ(in1,*) PARTDUMP_FRACSAMPLE
          IF (line=='Load_part_fracsample:')    READ(in1,*) PARTLOAD_FRACSAMPLE
          IF (line=='Dump_part_bound_every:')   READ(in1,*) DUMP_PART_BOUND_EVERY
