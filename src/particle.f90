@@ -137,7 +137,7 @@ USE mpi_common
       particlept%ID = PROC_ID + ISHFT(PARTICLE_ID_COUNTER, 8)
       PARTICLE_ID_COUNTER = PARTICLE_ID_COUNTER + 1
 
-      particlept%DUMP_TRAJ = .TRUE.
+      particlept%DUMP_TRAJ = .FALSE.
       
    END SUBROUTINE INIT_PARTICLE
 

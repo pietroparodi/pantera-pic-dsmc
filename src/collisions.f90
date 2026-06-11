@@ -29,6 +29,39 @@ MODULE collisions
    
    CONTAINS
 
+
+   SUBROUTINE COLLISIONS_ALL
+
+      IMPLICIT NONE
+
+      INTEGER :: JR
+
+
+      TIMESTEP_COLL = 0
+      TIMESTEP_REAC = 0
+      TIMESTEP_REACTIONS = 0.d0
+      DO JR = 1, N_REACTIONS
+         REACTIONS(JR)%COUNTS = 0
+      END DO
+
+      IF (COLLISION_TYPE == MCC)  CALL MCC_COLLISIONS
+
+      IF (COLLISION_TYPE == MCC_VAHEDI)  CALL MCC_COLLISIONS_VAHEDI
+
+      IF (COLLISION_TYPE == DSMC .OR. COLLISION_TYPE == DSMC_VAHEDI) THEN
+         CALL DSMC_COLLISIONS
+      END IF
+
+      IF (COLLISION_TYPE == MCC_DSMC_VAHEDI) THEN
+         CALL DSMC_COLLISIONS
+         CALL MCC_COLLISIONS_VAHEDI
+      END IF
+
+      IF (COLLISION_TYPE == BGK) CALL BGK_COLLISIONS
+
+
+   END SUBROUTINE COLLISIONS_ALL
+
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    ! SUBROUTINE DSMC_COLLISIONS -> Computes DSMC collisions on the grid  !
    ! Called by TIME_LOOP if DSMC collisions are active                   !
@@ -50,7 +83,6 @@ MODULE collisions
       INTEGER, DIMENSION(:), ALLOCATABLE :: NPCALL, IOFALL
       INTEGER, DIMENSION(:), ALLOCATABLE :: IND, INDALL
       INTEGER                            :: JP, JS, JC, IDX, IDXALL, IP
-      INTEGER                            :: NCOLLREAL
       LOGICAL, DIMENSION(:), ALLOCATABLE :: REMOVE_PART, HAS_REACTED
 
       ALLOCATE(NPC(N_SPECIES,NCELLS))
@@ -120,11 +152,6 @@ MODULE collisions
       !       END DO
       !    END DO
       ! END DO
-   
-      ! Compute collisions between particles
-      TIMESTEP_COLL = 0
-      TIMESTEP_REAC = 0
-      TIMESTEP_REACTIONS = 0.d0
 
       ALLOCATE(REMOVE_PART(3*NP_PROC))
       REMOVE_PART = .FALSE.
@@ -136,12 +163,10 @@ MODULE collisions
             ! For cells where there is at least two particles, call the collision procedure.
             IF (COLLISION_TYPE == DSMC) THEN
                ! DSMC temporarily broken because now arrays are per-species.
-               CALL VSS_COLLIS(JC, NPCALL, IOFALL, INDALL, NCOLLREAL)
+               CALL VSS_COLLIS(JC, NPCALL, IOFALL, INDALL)
             ELSE IF (COLLISION_TYPE == DSMC_VAHEDI .OR. COLLISION_TYPE == MCC_DSMC_VAHEDI) THEN
-               CALL VAHEDI_COLLIS(JC, NPC, IOF, IND, NCOLLREAL, HAS_REACTED, REMOVE_PART)
+               CALL VAHEDI_COLLIS(JC, NPC, IOF, IND, HAS_REACTED, REMOVE_PART)
             END IF
-            ! Add to the total number of collisions for this process
-            TIMESTEP_COLL = TIMESTEP_COLL + NCOLLREAL
          END IF
       END DO
 
@@ -169,7 +194,7 @@ MODULE collisions
    ! SUBROUTINE VSS_COLLIS -> Compute collisions with VSS model !!!!!!!!!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-   SUBROUTINE VSS_COLLIS(JC,NPC,IOF,IND, NCOLLREAL)
+   SUBROUTINE VSS_COLLIS(JC,NPC,IOF,IND)
 
       ! Computes the collisions using the VSS (or VHS, HS, depending on parameters)
       ! in cell JC. Needs the particles to be sorted by cell. This is done by the calling
@@ -180,7 +205,6 @@ MODULE collisions
       INTEGER, INTENT(IN) :: JC
       INTEGER, DIMENSION(:), INTENT(IN) :: NPC, IOF
       INTEGER, DIMENSION(:), INTENT(IN) :: IND
-      INTEGER, INTENT(OUT) :: NCOLLREAL
 
 
       INTEGER      :: IOFJ,IOLJ,NPCJ,JP1,JP2,JCOL, JP, INDJ, I, JR
@@ -271,7 +295,6 @@ MODULE collisions
 
       FCORR = NCOLLMAX/NCOLL
       !WRITE(*,*) 'Ncollmax_int', NCOLLMAX_INT, 'ncoll:', NCOLL, 'fcorr:', FCORR
-      NCOLLREAL = 0
 
       ! Step 3. Perform the collision => actual probability correct via FCORR
 
@@ -343,7 +366,7 @@ MODULE collisions
                WRITE(*,*) 'Attention => this was a bad DSMC collision!'
             END IF
 
-            NCOLLREAL = NCOLLREAL + 1
+            TIMESTEP_COLL = TIMESTEP_COLL + 1
 
 
             ! Test for chemical reaction with TCE model
@@ -381,7 +404,8 @@ MODULE collisions
                rfp = rf()
                IF (rfp .LT. PTCE) THEN
                   SKIP = .TRUE.
-                  TIMESTEP_REAC = TIMESTEP_REAC + 1
+                  IF (EA .NE. 0.d0) TIMESTEP_REAC = TIMESTEP_REAC + 1
+                  REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
                   TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) = TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) + FNUM/VOL/DT
                   ! React
                   ECOLL = ECOLL - EA
@@ -428,7 +452,7 @@ MODULE collisions
                   END IF
                   TOTDOF = TOTDOF - 3.
                   EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, 3)
-                  CALL HS_SCATTER(EI, M1, M2, C1, C2)
+                  CALL HS_SCATTER_NEWNEW(EI, M1, M2, C1, C2)
                   ECOLL = ECOLL - EI
 
                   
@@ -453,7 +477,7 @@ MODULE collisions
                      M2 = SPECIES(P3_SP_ID)%MOLECULAR_MASS
                      C1 = C2
                      
-                     CALL HS_SCATTER(ECOLL, M1, M2, C1, C2)
+                     CALL HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
 
                      particles(JP2)%VX = C1(1)
                      particles(JP2)%VY = C1(2)
@@ -571,10 +595,7 @@ MODULE collisions
 
          END IF
 
-      END DO  
-
-      !WRITE(*,*) 'Actually performed:', NCOLLREAL
-      !WRITE(*,*) NCOLL/(DT*NPC(JC))/MCRVHS, NCOLLREAL/(DT*NPC(JC))/MCRVHS 
+      END DO
 
       RETURN
          
@@ -586,7 +607,7 @@ MODULE collisions
    ! with Vahedi's algorithm and tabluated cross-sections             !!!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-   SUBROUTINE VAHEDI_COLLIS(JC,NPC,IOF,IND, NCOLLREAL, HAS_REACTED, REMOVE_PART)
+   SUBROUTINE VAHEDI_COLLIS(JC,NPC,IOF,IND, HAS_REACTED, REMOVE_PART)
 
       ! Computes the collisions using the VSS (or VHS, HS, depending on parameters)
       ! in cell JC. Needs the particles to be sorted by cell. This is done by the calling
@@ -597,7 +618,6 @@ MODULE collisions
       INTEGER, INTENT(IN) :: JC
       INTEGER, DIMENSION(:,:), INTENT(IN) :: NPC, IOF
       INTEGER, DIMENSION(:), INTENT(IN) :: IND
-      INTEGER, INTENT(OUT) :: NCOLLREAL
       LOGICAL, DIMENSION(:), INTENT(INOUT) :: REMOVE_PART
       LOGICAL, DIMENSION(:), INTENT(INOUT) :: HAS_REACTED
 
@@ -613,6 +633,8 @@ MODULE collisions
       REAL(KIND=8) :: M1, M2
       REAL(KIND=8) :: CFNUM, VOL, SPWTR1, SPWTR2, MINWTR, MAXWTR, SPWTP1, SPWTP2, SPWTP3
       REAL(KIND=8) :: P_REACT, FACTOR
+
+      LOGICAL :: PRINTALO
       
 
       TYPE(PARTICLE_DATA_STRUCTURE) :: NEWparticle
@@ -627,8 +649,6 @@ MODULE collisions
 
 
       DO JR = 1, N_REACTIONS
-
-         REACTIONS(JR)%COUNTS = 0
 
          SP_ID1 = REACTIONS(JR)%R1_SP_ID
          SP_ID2 = REACTIONS(JR)%R2_SP_ID
@@ -725,11 +745,13 @@ MODULE collisions
 
          FCORR = NCOLLMAX/NCOLL
          !WRITE(*,*) 'Ncollmax_int', NCOLLMAX_INT, 'ncoll:', NCOLL, 'fcorr:', FCORR
-         NCOLLREAL = 0
 
          ! Step 3. Perform the collision => actual probability correct via FCORR
          !WRITE(*,*) 'Testing ', NCOLL, ' collision pairs for reaction ', JR, ' with correction ', FCORR
-
+         IF (JC == 200) THEN
+            WRITE(*,*) SP_ID1, SP_ID2, FACTOR, AVAIL1, AVAIL2, MAX_SIGMA, VRMAX, CFNUM, MAXWTR, NCOLLMAX, FCORR
+         END IF
+         
          DO JCOL = 1, NCOLL
 
             ! Select a particle pair randomly.
@@ -803,17 +825,26 @@ MODULE collisions
 
             IF (P_REACT > 1.d0) WRITE(*,*) 'Warning! Bad DSMC collision for process ', JR, 'P_REACT = ', P_REACT, &
             ' VR = ', VR, ' VRMAX = ', VRMAX, ' SIGMA_R = ', SIGMA_R, ' MAX_SIGMA = ', MAX_SIGMA, &
-            ' NCOLLMAX = ', NCOLLMAX, ' NCOLL = ', NCOLL
+            ' NCOLLMAX = ', NCOLLMAX, ' NCOLL = ', NCOLL, ' FCORR = ', FCORR
 
             ! Try the reaction
             IF (rf() < P_REACT) THEN ! Collision happens
 
+               ! PRINTALO = .FALSE.
+               ! IF (particles(JP1)%S_ID == 1 .AND. 0.5*127.*1.66d-27*(C1(1)*C1(1) + C1(2)*C1(2) + C1(3)*C1(3)) > 0.5*1.6d-19) &
+               ! PRINTALO = .TRUE.
+               ! IF (particles(JP2)%S_ID == 1 .AND. 0.5*127.*1.66d-27*(C2(1)*C2(1) + C2(2)*C2(2) + C2(3)*C2(3)) > 0.5*1.6d-19) &
+               ! PRINTALO = .TRUE.
+
+               ! IF (PRINTALO) WRITE(*,*) 'A fast I has collided.'
+               ! IF (PRINTALO) WRITE(*,*) 'C1 PRE: ', C1, ' C2 PRE: ', C2
+               ! IF (PRINTALO) WRITE(*,*) 'SUM V2 PRE: ', C1(1)*C1(1)+C1(2)*C1(2)+C1(3)*C1(3) &
+               ! + C2(1)*C2(1)+C2(2)*C2(2)+C2(3)*C2(3)
+
                TIMESTEP_COLL = TIMESTEP_COLL + 1
                TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) = TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) + FNUM/VOL/DT
                REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
-               IF (EA .NE. 0.d0) THEN
-                  TIMESTEP_REAC = TIMESTEP_REAC + 1
-               END IF
+               IF (EA .NE. 0.d0) TIMESTEP_REAC = TIMESTEP_REAC + 1
 
                HAS_REACTED(JP1) = .TRUE.
                HAS_REACTED(JP2) = .TRUE.
@@ -893,8 +924,12 @@ MODULE collisions
                   !IF (TIMESTEP_COLL < 10) WRITE(*,*) 'Colliding particles ', JP1, JP2, ' with mass ', M1, ' and ', M2
                   !IF (TIMESTEP_COLL < 10) WRITE(*,*) 'Pre collision velocities  ', C1, ' and ', C2
 
-                  CALL HS_SCATTER(EI, M1, M2, C1, C2)
+                  CALL HS_SCATTER_NEWNEW(EI, M1, M2, C1, C2)
                   !IF (TIMESTEP_COLL < 10) WRITE(*,*) 'Post collision velocities ', C1, ' and ', C2
+                  ! IF (PRINTALO) WRITE(*,*) 'C1 POST: ', C1, ' C2 POST: ', C2
+                  ! IF (PRINTALO) WRITE(*,*) 'SUM V2 POST: ', C1(1)*C1(1)+C1(2)*C1(2)+C1(3)*C1(3) &
+                  ! + C2(1)*C2(1)+C2(2)*C2(2)+C2(3)*C2(3)
+
                   ECOLL = ECOLL - EI
 
                   particles(IP1)%VX = C1(1)
@@ -919,7 +954,7 @@ MODULE collisions
                      M2 = SPECIES(P3_SP_ID)%MOLECULAR_MASS
                      C1 = C2
                      
-                     CALL HS_SCATTER(ECOLL, M1, M2, C1, C2)
+                     CALL HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
                            
                      particles(IP2)%VX = C1(1)
                      particles(IP2)%VY = C1(2)
@@ -945,10 +980,6 @@ MODULE collisions
 
       END DO
 
-      !WRITE(*,*) 'Actually performed:', NCOLLREAL
-      !WRITE(*,*) NCOLL/(DT*NPC(JC))/MCRVHS, NCOLLREAL/(DT*NPC(JC))/MCRVHS 
-
-      
          
    END SUBROUTINE VAHEDI_COLLIS
 
@@ -1060,6 +1091,108 @@ MODULE collisions
 
    END SUBROUTINE HS_SCATTER
 
+
+
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   ! SUBROUTINE HS_SCATTER -> Computes velocities after a hard-sphere   !
+   ! i.e. isotropic collision                                           !
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   SUBROUTINE HS_SCATTER_NEW(ECOLL, M1, M2, C1, C2)
+      
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: ECOLL, M1, M2
+      REAL(KIND=8), INTENT(INOUT), DIMENSION(3) :: C1, C2
+      REAL(KIND=8), DIMENSION(3) :: W, GREL, GVEC
+      REAL(KIND=8) :: PI2
+      REAL(KIND=8) :: MRED, G, COSPHI, SINPHI, THETA
+      INTEGER :: I
+
+      PI2  = 2.*PI
+
+      MRED  = M1*M2/(M1+M2)
+      ! Relative velocity from given translational energy
+      G = SQRT(2.*ECOLL/MRED)
+
+      GVEC = C1 - C2
+      G = SQRT(GVEC(1)*GVEC(1) + GVEC(2)*GVEC(2) + GVEC(3)*GVEC(3))
+
+      COSPHI = 2.*rf()-1.
+      SINPHI = SQRT(1-COSPHI*COSPHI)
+      THETA = PI2 * rf()
+
+      GREL(1) = GVEC(1)*COSPHI + (SQRT(GVEC(2)*GVEC(2) + GVEC(3)*GVEC(3)) * SIN(THETA))*SINPHI
+      GREL(2) = GVEC(2)*COSPHI + ( G*GVEC(3)*COS(THETA) - GVEC(1)*GVEC(2)*SIN(THETA) ) / &
+      SQRT(GVEC(2)*GVEC(2) + GVEC(3)*GVEC(3)) * SIN(THETA)
+      GREL(3) = GVEC(3)*COSPHI + ( G*GVEC(2)*COS(THETA) + GVEC(1)*GVEC(3)*SIN(THETA) ) / &
+      SQRT(GVEC(2)*GVEC(2) + GVEC(3)*GVEC(3)) * SIN(THETA)
+
+      ! Compute center of mass velocity vector
+      DO I = 1, 3
+         W(I) = M1/(M1+M2)*C1(I) + M2/(M1+M2)*C2(I)
+      END DO
+
+      ! Compute absolute velocity vector of the two particles
+      DO I = 1, 3
+         C1(I) = W(I) + M2/(M1+M2)*GREL(I)
+         C2(I) = W(I) - M1/(M1+M2)*GREL(I)
+      END DO
+
+   END SUBROUTINE HS_SCATTER_NEW
+
+
+
+   SUBROUTINE HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), DIMENSION(3), INTENT(INOUT) :: C1, C2
+      REAL(KIND=8), INTENT(IN) :: M1, M2, ECOLL
+
+      INTEGER :: I
+      REAL(KIND=8), DIMENSION(3) :: W, GREL
+      REAL(KIND=8) :: GX, GY, GZ, G, COSCHI, SINCHI, THETA, COSTHETA, SINTHETA, COSA, SINA, BB, PI2, MRED
+
+      PI2  = 2.*PI
+
+      MRED  = M1*M2/(M1+M2)
+      ! Relative velocity from given translational energy
+      G = SQRT(2.*ECOLL/MRED)
+      
+      COSA = 2.*rf() - 1.
+      SINA = SQRT(1-COSA*COSA)
+      BB = PI2*rf()
+
+      GX = G*SINA*COS(BB)
+      GY = G*SINA*SIN(BB)
+      GZ = G*COSA
+
+
+      COSCHI = 2.*rf() - 1.
+      SINCHI = SQRT(1.-COSCHI*COSCHI)
+      THETA = PI2*rf()
+      COSTHETA = COS(THETA)
+      SINTHETA = SIN(THETA)
+
+      ! Compute post-collision velocities
+      GREL(1) = GX*COSCHI + SQRT(GY*GY+GZ*GZ)*SINTHETA*SINCHI
+      GREL(2) = GY*COSCHI + (G*GZ*COSTHETA - GX*GY*SINTHETA)/SQRT(GY*GY+GZ*GZ)*SINCHI
+      GREL(3) = GZ*COSCHI - (G*GY*COSTHETA + GX*GZ*SINTHETA)/SQRT(GY*GY+GZ*GZ)*SINCHI
+
+      ! Compute center of mass velocity vector
+      DO I = 1, 3
+         W(I) = M1/(M1+M2)*C1(I) + M2/(M1+M2)*C2(I)
+      END DO
+
+      ! Compute absolute velocity vector of the two particles
+      DO I = 1, 3
+         C1(I) = W(I) + M2/(M1+M2)*GREL(I)
+         C2(I) = W(I) - M1/(M1+M2)*GREL(I)
+      END DO
+
+   END SUBROUTINE HS_SCATTER_NEWNEW
      
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
    ! SUBROUTINE BGK_COLLISIONS -> Standalone procedure for       !
@@ -1170,9 +1303,7 @@ MODULE collisions
       END DO
       
       ! =========== LOOP ON CELLS AND COMPUTE BGK COLLISIONS =========
-   
-      TIMESTEP_COLL = 0 ! Init number of collisions that happened
-   
+      
       DO JC = 1, NCELLS
    
          ! Note that in the current formulation, some cells may be not owned by me. 
@@ -1353,10 +1484,6 @@ MODULE collisions
 
       PI2 = 2*PI
 
-      TIMESTEP_COLL = 0
-      TIMESTEP_REAC = 0
-      TIMESTEP_REACTIONS = 0.d0
-
       NP_PROC_INITIAL = NP_PROC
       DO JP1 = 1,NP_PROC_INITIAL
          SP_ID1 = particles(JP1)%S_ID
@@ -1369,7 +1496,7 @@ MODULE collisions
                BG_TTR = MCC_BG_CELL_TTR(SP_ID2, particles(JP1)%IC)
             ELSE
                FRAC = MIXTURES(MCC_BG_MIX)%COMPONENTS(J)%MOLFRAC
-               BG_NRHO = FRAC*MCC_BG_DENS*(1.0 - 0.8*(particles(JP1)%X+0.125)/0.25)
+               BG_NRHO = FRAC*MCC_BG_DENS
                BG_TTR = MCC_BG_TTRA
             END IF
             IF (BG_NRHO == 0) CYCLE
@@ -1468,7 +1595,6 @@ MODULE collisions
                   ! Here we suppose that the probability is so low that we can test sequentially with acceptable error
                   IF (rfp .LT. PTCE) THEN
                      SKIP = .TRUE.
-                     TIMESTEP_REAC = TIMESTEP_REAC + 1
                      JC = particles(JP1)%IC
                      IF (GRID_TYPE == RECTILINEAR_UNIFORM .AND. ((DIMS == 2) .OR. (DIMS == 0))) THEN
                         VOL = CELL_VOL
@@ -1480,6 +1606,8 @@ MODULE collisions
                         VOL = U3D_GRID%CELL_VOLUMES(JC)
                      END IF
                      TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) = TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) + FNUM/VOL/DT
+                     REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
+                     IF (EA .NE. 0.d0) TIMESTEP_REAC = TIMESTEP_REAC + 1
                      !WRITE(*,*) 'Reacting!'
                      ! React
                      ECOLL = ECOLL - EA
@@ -1528,7 +1656,7 @@ MODULE collisions
                         END IF
                         TOTDOF = TOTDOF - 3.
                         EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, 3)
-                        CALL HS_SCATTER(EI, M1, M2, C1, C2)
+                        CALL HS_SCATTER_NEWNEW(EI, M1, M2, C1, C2)
                         ECOLL = ECOLL - EI
          
                         particles(JP1)%VX = C1(1)
@@ -1553,7 +1681,7 @@ MODULE collisions
                            M2 = SPECIES(P3_SP_ID)%MOLECULAR_MASS
                            C1 = C2
                            
-                           CALL HS_SCATTER(ECOLL, M1, M2, C1, C2)
+                           CALL HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
                                  
                            particles(JP2)%VX = C1(1)
                            particles(JP2)%VY = C1(2)
@@ -1717,14 +1845,6 @@ MODULE collisions
 
       PI2 = 2*PI
 
-      TIMESTEP_COLL = 0
-      TIMESTEP_REAC = 0
-      TIMESTEP_REACTIONS = 0.d0
-
-      DO JR = 1, N_REACTIONS
-         REACTIONS(JR)%COUNTS = 0
-      END DO
-
       NULL_COLL_FREQ = MCC_BG_DENS*MCC_NULL_RATE
       !P_NULL = 1 - EXP(-DT*NULL_COLL_FREQ)
       P_NULL = DT*NULL_COLL_FREQ
@@ -1830,9 +1950,7 @@ MODULE collisions
                   END IF
                   TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) = TIMESTEP_REACTIONS((JR-1)*NCELLS + JC) + FNUM/VOL/DT
                   REACTIONS(JR)%COUNTS = REACTIONS(JR)%COUNTS + 1
-                  IF (EA .NE. 0.d0) THEN
-                     TIMESTEP_REAC = TIMESTEP_REAC + 1
-                  END IF
+                  IF (EA .NE. 0.d0) TIMESTEP_REAC = TIMESTEP_REAC + 1
                   
 
                   ! Actually create the second collision partner
@@ -1867,6 +1985,7 @@ MODULE collisions
                   particles(JP1)%S_ID = REACTIONS(JR)%P1_SP_ID
                   particles(JP2)%S_ID = REACTIONS(JR)%P2_SP_ID
 
+                  IF (JR == 1) particles(JP1)%DUMP_TRAJ = .TRUE.
 
                   IF (.NOT. REACTIONS(JR)%IS_CEX) THEN
       
@@ -1920,7 +2039,7 @@ MODULE collisions
                      ELSE
                         EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, 3)
                      END IF
-                     CALL HS_SCATTER(EI, M1, M2, C1, C2)
+                     CALL HS_SCATTER_NEWNEW(EI, M1, M2, C1, C2)
                      ECOLL = ECOLL - EI
       
                      particles(JP1)%VX = C1(1)
@@ -1946,7 +2065,7 @@ MODULE collisions
                         M2 = SPECIES(P3_SP_ID)%MOLECULAR_MASS
                         C1 = C2
                         
-                        CALL HS_SCATTER(ECOLL, M1, M2, C1, C2)
+                        CALL HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
                               
                         particles(JP2)%VX = C1(1)
                         particles(JP2)%VY = C1(2)
@@ -1988,7 +2107,7 @@ MODULE collisions
                         M2 = SPECIES(P3_SP_ID)%MOLECULAR_MASS + SPECIES(P4_SP_ID)%MOLECULAR_MASS
                         C1 = C2
                         
-                        CALL HS_SCATTER(ECOLL, M1, M2, C1, C2)
+                        CALL HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
                               
                         particles(JP2)%VX = C1(1)
                         particles(JP2)%VY = C1(2)
@@ -2013,7 +2132,7 @@ MODULE collisions
                         M2 = SPECIES(P4_SP_ID)%MOLECULAR_MASS
                         C1 = C2
                         
-                        CALL HS_SCATTER(ECOLL, M1, M2, C1, C2)
+                        CALL HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
                               
                         particles(JP3)%VX = C1(1)
                         particles(JP3)%VY = C1(2)
@@ -2028,7 +2147,7 @@ MODULE collisions
                      END IF
                   END IF
 
-                  IF (JR == 3 .AND. PROC_ID == 0 .AND. .FALSE.) THEN
+                  IF (JR == 3 .AND. PROC_ID == 0 .AND. .TRUE.) THEN
                      OPEN(66338, FILE='reaction_energies', POSITION='append', STATUS='unknown', ACTION='write')
                      WRITE(66338,*) EACOLL, ETRCOLL, ETRR1, ETRR2, ETRP1, ETRP2, ETRP3
                      CLOSE(66338)

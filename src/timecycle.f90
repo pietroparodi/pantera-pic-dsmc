@@ -293,20 +293,8 @@ MODULE timecycle
 
          CALL MPI_BARRIER(MPI_COMM_WORLD, ierr)
          CALL TIMER_START(6)
-         IF (COLLISION_TYPE == MCC)  CALL MCC_COLLISIONS
-         IF (COLLISION_TYPE == MCC_VAHEDI)  CALL MCC_COLLISIONS_VAHEDI
 
-
-         IF (COLLISION_TYPE == DSMC .OR. COLLISION_TYPE == DSMC_VAHEDI) THEN
-            CALL DSMC_COLLISIONS
-         END IF
-
-         IF (COLLISION_TYPE == MCC_DSMC_VAHEDI) THEN
-            CALL DSMC_COLLISIONS
-            CALL MCC_COLLISIONS_VAHEDI
-         END IF
-
-         IF (COLLISION_TYPE == BGK) CALL BGK_COLLISIONS
+         CALL COLLISIONS_ALL
 
          CALL MPI_BARRIER(MPI_COMM_WORLD, ierr)
          CALL TIMER_STOP(6)
@@ -791,6 +779,8 @@ MODULE timecycle
                         YP = V1(2) + (V2(2)-V1(2))*P + (V3(2)-V1(2))*Q + (V4(2)-V1(2))*R
                         ZP = V1(3) + (V2(3)-V1(3))*P + (V3(3)-V1(3))*Q + (V4(3)-V1(3))*R
                      END IF
+
+                     IF (SQRT(XP**2 + YP**2) .GE. 0.005) CYCLE
 
                      ! Assign velocity and energy following a Boltzmann distribution
                      M = SPECIES(S_ID)%MOLECULAR_MASS
