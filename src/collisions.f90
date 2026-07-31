@@ -748,9 +748,6 @@ MODULE collisions
 
          ! Step 3. Perform the collision => actual probability correct via FCORR
          !WRITE(*,*) 'Testing ', NCOLL, ' collision pairs for reaction ', JR, ' with correction ', FCORR
-         IF (JC == 200) THEN
-            WRITE(*,*) SP_ID1, SP_ID2, FACTOR, AVAIL1, AVAIL2, MAX_SIGMA, VRMAX, CFNUM, MAXWTR, NCOLLMAX, FCORR
-         END IF
          
          DO JCOL = 1, NCOLL
 

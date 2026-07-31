@@ -254,7 +254,7 @@ MODULE timecycle
             CALL TIMER_STOP(2)
             
             CALL TIMER_START(3)
-            CALL ADVECT_CN_B(particles, .TRUE., .FALSE., Jmat)
+            CALL ADVECT_CN(particles, .TRUE., .FALSE., Jmat)
             CALL TIMER_STOP(3)
 
          ELSE IF (PIC_TYPE == HYBRID) THEN
@@ -1197,7 +1197,7 @@ MODULE timecycle
 
       REAL(KIND=8) :: VXPRE, VYPRE, VZPRE
       REAL(KIND=8) :: XI_PRE, XI_POST, P_REINJECTION
-
+      REAL(KIND=8) :: U_TANG1, U_TANG2
       
       REAL(KIND=8) :: TOL = 1.0d-15
 
@@ -1733,6 +1733,48 @@ MODULE timecycle
                            !    particles(IP)%VX, ',', particles(IP)%VY, ',', particles(IP)%VZ, ',',&
                            !    FACE_NORMAL(1), ',', FACE_NORMAL(2), ',', FACE_NORMAL(3)
                            ! END IF
+                        ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC(particles(IP)%S_ID) == MOVING) THEN
+                           IF (GRID_BC(FACE_PG)%REACT) THEN
+                              CALL WALL_REACT(particles, IP, REMOVE_PART(IP))
+                           END IF
+                           
+                           VXPRE = particles(IP)%VX
+                           VYPRE = particles(IP)%VY
+                           VZPRE = particles(IP)%VZ
+
+                           S_ID = particles(IP)%S_ID
+                           WALL_TEMP = GRID_BC(FACE_PG)%WALL_TEMP
+
+                           U_TANG1 = GRID_BC(FACE_PG)%U_PISTON(1)*FACE_TANG1(1) &
+                                   + GRID_BC(FACE_PG)%U_PISTON(2)*FACE_TANG1(2) &
+                                   + GRID_BC(FACE_PG)%U_PISTON(3)*FACE_TANG1(3)
+
+                           U_TANG2 = GRID_BC(FACE_PG)%U_PISTON(1)*FACE_TANG2(1) &
+                                   + GRID_BC(FACE_PG)%U_PISTON(2)*FACE_TANG2(2) &
+                                   + GRID_BC(FACE_PG)%U_PISTON(3)*FACE_TANG2(3)
+
+                           CALL MAXWELL(0.d0, U_TANG1, U_TANG2, &
+                           WALL_TEMP, WALL_TEMP, WALL_TEMP, &
+                           VDUMMY, V_TANG1, V_TANG2, SPECIES(S_ID)%MOLECULAR_MASS)
+
+                           CALL INTERNAL_ENERGY(SPECIES(S_ID)%ROTDOF, WALL_TEMP, EROT)
+                           CALL INTERNAL_ENERGY(SPECIES(S_ID)%VIBDOF, WALL_TEMP, EVIB)
+                                          
+                           V_PERP = FLX(0.d0, WALL_TEMP, SPECIES(S_ID)%MOLECULAR_MASS)
+
+
+                           particles(IP)%VX = V_PERP*FACE_NORMAL(1) &
+                                            + V_TANG1*FACE_TANG1(1) &
+                                            + V_TANG2*FACE_TANG2(1)
+                           particles(IP)%VY = V_PERP*FACE_NORMAL(2) &
+                                            + V_TANG1*FACE_TANG1(2) &
+                                            + V_TANG2*FACE_TANG2(2)
+                           particles(IP)%VZ = V_PERP*FACE_NORMAL(3) &
+                                            + V_TANG1*FACE_TANG1(3) &
+                                            + V_TANG2*FACE_TANG2(3)
+                           
+                           particles(IP)%EROT = EROT
+                           particles(IP)%EVIB = EVIB
 
                         ELSE IF (GRID_BC(FACE_PG)%PARTICLE_BC(particles(IP)%S_ID) == CLL) THEN
                            IF (GRID_BC(FACE_PG)%REACT) THEN

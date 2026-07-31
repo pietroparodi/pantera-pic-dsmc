@@ -28,7 +28,6 @@ MODULE fields
    USE tools
    USE grid_and_partition
 
-
    USE petsc
    USE petscksp
 
@@ -69,6 +68,8 @@ MODULE fields
       !PetscCallMPIA(MPI_Comm_size(PETSC_COMM_WORLD,size,ierr)) ---> N_MPI_THREADS
       !PetscCallMPIA(MPI_Comm_rank(PETSC_COMM_WORLD,rank,ierr)) ---> PROC_ID
 
+      CALL PetscPopSignalHandler(ierr)
+      CALL PetscPopSignalHandler(ierr)
       CALL PetscPopSignalHandler(ierr)
 
    END SUBROUTINE PETSC_INIT
@@ -1189,6 +1190,8 @@ MODULE fields
          SPWT = SPECIES(particles(JP)%S_ID)%SPWT
          IF (ABS(CHARGE) .LT. 1.d-6) CYCLE
 
+         IF (particles(JP)%DTRIM < DT) CYCLE
+
          IF (GRID_TYPE == UNSTRUCTURED) THEN
             IC = particles(JP)%IC
 
@@ -1289,6 +1292,7 @@ MODULE fields
 
       IMPLICIT NONE
 
+      CALL KSPDestroy(ksp,ierr)
       CALL KSPCreate(PETSC_COMM_WORLD,ksp,ierr)
       CALL KSPSetOperators(ksp,Amat,Amat,ierr)
 
@@ -1892,7 +1896,7 @@ MODULE fields
       !  Advect the particles using the guessed new potential
       IF (ALLOCATED(particles)) ALLOCATE(part_adv, SOURCE = particles)
       CALL TIMER_START(3)
-      CALL ADVECT_CN_B(part_adv, .FALSE., .FALSE., Jmat)
+      CALL ADVECT_CN(part_adv, .FALSE., .FALSE., Jmat)
       CALL TIMER_STOP(3)
       CALL DEPOSIT_CHARGE(part_adv)
       IF (ALLOCATED(part_adv)) DEALLOCATE(part_adv)
@@ -1998,7 +2002,7 @@ MODULE fields
       !  Advect the particles using the guessed new potential
       IF (ALLOCATED(particles)) ALLOCATE(part_adv, SOURCE = particles)
       CALL TIMER_START(3)
-      CALL ADVECT_CN_B(part_adv, .FALSE., .TRUE., jac)
+      CALL ADVECT_CN(part_adv, .FALSE., .TRUE., jac)
       CALL TIMER_STOP(3)
       IF (JACOBIAN_TYPE == 4) CALL COMPUTE_MASS_MATRICES(part_adv)
       IF (JACOBIAN_TYPE == 6) CALL COMPUTE_DENSITY_TEMPERATURE(part_adv)
@@ -2413,7 +2417,7 @@ MODULE fields
       !  Advect the particles using the guessed new potential
       IF (ALLOCATED(particles)) ALLOCATE(part_adv, SOURCE = particles)
       CALL TIMER_START(3)
-      CALL ADVECT_CN_B(part_adv, .FALSE., .TRUE., Jmat)
+      CALL ADVECT_CN(part_adv, .FALSE., .TRUE., Jmat)
       CALL TIMER_STOP(3)
       CALL DEPOSIT_CHARGE(part_adv)
       IF (JACOBIAN_TYPE == 4) CALL COMPUTE_MASS_MATRICES(part_adv)
@@ -3568,6 +3572,20 @@ MODULE fields
                      ! The particle is at the boundary of the domain
                      IF (FACE_PG .NE. -1) THEN
 
+                        IF (FINAL) THEN
+                           IF (GRID_BC(FACE_PG)%DUMP_FLUXES .AND. (tID .GE. DUMP_PART_BOUND_START)) THEN
+                              CALL ADD_PARTICLE_ARRAY(part_adv(IP), NP_DUMP_PROC, part_dump)
+                           END IF
+
+
+                           ! Tally incident particle fluxes to boundary
+                           IF ((tID .GE. DUMP_GRID_START) .AND. (tID .NE. RESTART_TIMESTEP)) THEN
+                              IF (MOD(tID-DUMP_BOUND_START, DUMP_BOUND_AVG_EVERY) .EQ. 0) THEN
+                                 CALL TALLY_PARTICLE_TO_BOUNDARY(.FALSE., part_adv(IP), IC, BOUNDCOLL)
+                              END IF
+                           END IF
+                        END IF
+
                         CHARGE = SPECIES(part_adv(IP)%S_ID)%CHARGE
                         IF (GRID_BC(FACE_PG)%FIELD_BC == DIELECTRIC_BC .AND. ABS(CHARGE) .GE. 1.d-6 .AND. FINAL) THEN
                            K = QE/(EPS0*EPS_SCALING**2)
@@ -3710,6 +3728,16 @@ MODULE fields
                            REMOVE_PART(IP) = .TRUE.
                            part_adv(IP)%DTRIM = 0.d0
                         END IF
+
+                        ! Tally reflected particle fluxes to boundary
+                        IF ((.NOT. REMOVE_PART(IP)) .AND. FINAL) THEN
+                           IF ((tID .GE. DUMP_GRID_START) .AND. (tID .NE. RESTART_TIMESTEP)) THEN
+                              IF (MOD(tID-DUMP_BOUND_START, DUMP_BOUND_AVG_EVERY) .EQ. 0) THEN
+                                 CALL TALLY_PARTICLE_TO_BOUNDARY(.TRUE., part_adv(IP), IC, BOUNDCOLL)
+                              END IF
+                           END IF
+                        END IF
+
                      ELSE
                         REMOVE_PART(IP) = .TRUE.
                         part_adv(IP)%DTRIM = 0.d0
