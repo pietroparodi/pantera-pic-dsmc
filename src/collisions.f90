@@ -162,7 +162,6 @@ MODULE collisions
          IF (SUM(NPC(:,JC)) .GT. 1) THEN
             ! For cells where there is at least two particles, call the collision procedure.
             IF (COLLISION_TYPE == DSMC) THEN
-               ! DSMC temporarily broken because now arrays are per-species.
                CALL VSS_COLLIS(JC, NPCALL, IOFALL, INDALL)
             ELSE IF (COLLISION_TYPE == DSMC_VAHEDI .OR. COLLISION_TYPE == MCC_DSMC_VAHEDI) THEN
                CALL VAHEDI_COLLIS(JC, NPC, IOF, IND, HAS_REACTED, REMOVE_PART)
@@ -633,8 +632,6 @@ MODULE collisions
       REAL(KIND=8) :: M1, M2
       REAL(KIND=8) :: CFNUM, VOL, SPWTR1, SPWTR2, MINWTR, MAXWTR, SPWTP1, SPWTP2, SPWTP3
       REAL(KIND=8) :: P_REACT, FACTOR
-
-      LOGICAL :: PRINTALO
       
 
       TYPE(PARTICLE_DATA_STRUCTURE) :: NEWparticle
@@ -1826,7 +1823,9 @@ MODULE collisions
 
       IMPLICIT NONE
 
-      INTEGER      :: JP1, JP2, JP3, JR, J, SP_ID1, SP_ID2, P1_SP_ID, P2_SP_ID, P3_SP_ID, P4_SP_ID, NP_PROC_INITIAL
+      INTEGER      :: JP1, JP2, JR, J, SP_ID1, SP_ID2, P1_SP_ID, P2_SP_ID, P3_SP_ID, P4_SP_ID, NP_PROC_INITIAL
+      INTEGER      :: IP1, IP2, IP3, IP4, IP
+      REAL(KIND=8) :: SPWTR1, MINWTR, SPWTP1, SPWTP2, SPWTP3, SPWTP4
       INTEGER      :: JC
       REAL(KIND=8) :: BG_NRHO, BG_TTR, VOL
       REAL(KIND=8) :: FRAC, SIGMA_R
@@ -1837,6 +1836,7 @@ MODULE collisions
       TYPE(PARTICLE_DATA_STRUCTURE) :: NEWparticle
       REAL(KIND=8) :: NULL_COLL_FREQ, P_NULL, R_SELECT, P_CUMULATED
       LOGICAL :: HAS_REACTED
+      LOGICAL, DIMENSION(:), ALLOCATABLE :: REMOVE_PART
 
       REAL(KIND=8) :: ETRR1, ETRR2, ETRP1, ETRP2, ETRP3, ETRCOLL, EACOLL
 
@@ -1850,6 +1850,9 @@ MODULE collisions
          P_NULL = 1.
          NULL_COLL_FREQ = 1./DT
       END IF
+
+      ALLOCATE(REMOVE_PART(3*NP_PROC))
+      REMOVE_PART = .FALSE.
 
       NP_PROC_INITIAL = NP_PROC
       DO JP1 = 1, NP_PROC_INITIAL
@@ -1917,6 +1920,9 @@ MODULE collisions
                EA = REACTIONS(JR)%EA
                IF (ETR .LE. EA) CYCLE
 
+               SPWTR1 = SPECIES(SP_ID1)%SPWT
+               MINWTR = SPWTR1
+
                EACOLL = EA
                ETRR1 = 0.5*M1*(C1(1)**2 + C1(2)**2 + C1(3)**2)
 
@@ -1956,15 +1962,19 @@ MODULE collisions
                   CALL INIT_PARTICLE(particles(JP1)%X,particles(JP1)%Y,particles(JP1)%Z, &
                   C2(1),C2(2),C2(3),EROT,EVIB,SP_ID2,particles(JP1)%IC,DT, NEWparticle)
 
-                  ! Add particle to array!
+                  ! Add particle to array
                   CALL ADD_PARTICLE_ARRAY(NEWparticle, NP_PROC, particles)
                   JP2 = NP_PROC
+
+                  IF (rf() > (SPWTR1-MINWTR)/SPWTR1) REMOVE_PART(JP1) = .TRUE.
+                  ! Always remove JP2, it only exists in the background.
+                  REMOVE_PART(JP2) = .TRUE.
 
                   ETRR2 = 0.5*M2*(C2(1)**2 + C2(2)**2 + C2(3)**2)
 
                   ! Rimuovere commento per avere avviso
                   IF (P_CUMULATED .GT. 1.) THEN
-                     WRITE(*,*) 'Attention => this was a bad MCC collision!!!'
+                     WRITE(*,*) 'Caution! This was a bad MCC collision for reaction ', JR
                   END IF
 
                   !WRITE(*,*) 'Reacting!'
@@ -1976,13 +1986,32 @@ MODULE collisions
                   P1_SP_ID = REACTIONS(JR)%P1_SP_ID
                   P2_SP_ID = REACTIONS(JR)%P2_SP_ID
 
+                  SPWTP1 = SPECIES(P1_SP_ID)%SPWT
+                  SPWTP2 = SPECIES(P2_SP_ID)%SPWT
+
                   !WRITE(*,*) 'SP_ID changed from ', particles(JP1)%S_ID, particles(JP2)%S_ID, &
                   !' to ', REACTIONS(JR)%P1_SP_ID, REACTIONS(JR)%P2_SP_ID
 
-                  particles(JP1)%S_ID = REACTIONS(JR)%P1_SP_ID
-                  particles(JP2)%S_ID = REACTIONS(JR)%P2_SP_ID
+                  !particles(JP1)%S_ID = REACTIONS(JR)%P1_SP_ID
+                  !particles(JP2)%S_ID = REACTIONS(JR)%P2_SP_ID
 
-                  IF (JR == 1) particles(JP1)%DUMP_TRAJ = .TRUE.
+                  ! Create the first two product particles IP1 and IP2
+
+                  CALL INIT_PARTICLE(particles(JP1)%X,particles(JP1)%Y,particles(JP1)%Z, &
+                  C1(1),C1(2),C1(3),particles(JP1)%EROT,particles(JP1)%EVIB,P1_SP_ID, &
+                  particles(JP1)%IC,DT, NEWparticle)
+                  CALL ADD_PARTICLE_ARRAY(NEWparticle, NP_PROC, particles)
+                  IP1 = NP_PROC
+
+                  IF (rf() > MINWTR/SPWTP1) REMOVE_PART(IP1) = .TRUE.
+
+                  CALL INIT_PARTICLE(particles(JP2)%X,particles(JP2)%Y,particles(JP2)%Z, &
+                  C2(1),C2(2),C2(3),particles(JP2)%EROT,particles(JP2)%EVIB,P2_SP_ID, &
+                  particles(JP2)%IC,DT, NEWparticle)
+                  CALL ADD_PARTICLE_ARRAY(NEWparticle, NP_PROC, particles)
+                  IP2 = NP_PROC
+
+                  IF (rf() > MINWTR/SPWTP2) REMOVE_PART(IP2) = .TRUE.
 
                   IF (.NOT. REACTIONS(JR)%IS_CEX) THEN
       
@@ -1998,22 +2027,22 @@ MODULE collisions
                      END IF
       
                      EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, SPECIES(P1_SP_ID)%VIBDOF)
-                     particles(JP1)%EVIB = EI
+                     particles(IP1)%EVIB = EI
                      ECOLL = ECOLL - EI
       
                      TOTDOF = TOTDOF - SPECIES(P1_SP_ID)%ROTDOF
                      EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, SPECIES(P1_SP_ID)%ROTDOF)
-                     particles(JP1)%EROT = EI
+                     particles(IP1)%EROT = EI
                      ECOLL = ECOLL - EI
       
                      TOTDOF = TOTDOF - SPECIES(P2_SP_ID)%VIBDOF
                      EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, SPECIES(P2_SP_ID)%VIBDOF)
-                     particles(JP2)%EVIB = EI
+                     particles(IP2)%EVIB = EI
                      ECOLL = ECOLL - EI
       
                      TOTDOF = TOTDOF - SPECIES(P2_SP_ID)%ROTDOF
                      EI = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, SPECIES(P2_SP_ID)%ROTDOF)
-                     particles(JP2)%EROT = EI
+                     particles(IP2)%EROT = EI
                      ECOLL = ECOLL - EI
 
 
@@ -2039,16 +2068,16 @@ MODULE collisions
                      CALL HS_SCATTER_NEWNEW(EI, M1, M2, C1, C2)
                      ECOLL = ECOLL - EI
       
-                     particles(JP1)%VX = C1(1)
-                     particles(JP1)%VY = C1(2)
-                     particles(JP1)%VZ = C1(3)
+                     particles(IP1)%VX = C1(1)
+                     particles(IP1)%VY = C1(2)
+                     particles(IP1)%VZ = C1(3)
 
                      ETRP1 = 0.5*M1*(C1(1)**2 + C1(2)**2 + C1(3)**2)
       
                      IF (REACTIONS(JR)%N_PROD == 2) THEN
-                        particles(JP2)%VX = C2(1)
-                        particles(JP2)%VY = C2(2)
-                        particles(JP2)%VZ = C2(3)
+                        particles(IP2)%VX = C2(1)
+                        particles(IP2)%VY = C2(2)
+                        particles(IP2)%VZ = C2(3)
                      ELSE IF (REACTIONS(JR)%N_PROD == 3) THEN
                         TOTDOF = TOTDOF - SPECIES(P3_SP_ID)%VIBDOF
                         EVIB = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, SPECIES(P3_SP_ID)%VIBDOF)
@@ -2064,19 +2093,24 @@ MODULE collisions
                         
                         CALL HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
                               
-                        particles(JP2)%VX = C1(1)
-                        particles(JP2)%VY = C1(2)
-                        particles(JP2)%VZ = C1(3)
+                        particles(IP2)%VX = C1(1)
+                        particles(IP2)%VY = C1(2)
+                        particles(IP2)%VZ = C1(3)
                               
                         ETRP2 = 0.5*M1*(C1(1)**2 + C1(2)**2 + C1(3)**2)
                         ETRP3 = 0.5*M2*(C2(1)**2 + C2(2)**2 + C2(3)**2)
 
 
                         
-                        CALL INIT_PARTICLE(particles(JP2)%X,particles(JP2)%Y,particles(JP2)%Z, &
-                        C2(1),C2(2),C2(3),EROT,EVIB,P3_SP_ID,particles(JP2)%IC,DT, NEWparticle)
+                        CALL INIT_PARTICLE(particles(IP2)%X,particles(IP2)%Y,particles(IP2)%Z, &
+                        C2(1),C2(2),C2(3),EROT,EVIB,P3_SP_ID,particles(IP2)%IC,DT, NEWparticle)
                         !WRITE(*,*) 'Should be adding particle!'
                         CALL ADD_PARTICLE_ARRAY(NEWparticle, NP_PROC, particles)
+
+                        IP3 = NP_PROC
+                        SPWTP3 = SPECIES(P3_SP_ID)%SPWT
+
+                        IF (rf() > MINWTR/SPWTP3) REMOVE_PART(IP3) = .TRUE.
 
                         ! WRITE(*,*) 'P1 SP', particles(JP1)%S_ID, &
                         ! ' E = ', 0.5*SPECIES(particles(JP1)%S_ID)%MOLECULAR_MASS* &
@@ -2106,16 +2140,19 @@ MODULE collisions
                         
                         CALL HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
                               
-                        particles(JP2)%VX = C1(1)
-                        particles(JP2)%VY = C1(2)
-                        particles(JP2)%VZ = C1(3)
+                        particles(IP2)%VX = C1(1)
+                        particles(IP2)%VY = C1(2)
+                        particles(IP2)%VZ = C1(3)
                               
                         
                         CALL INIT_PARTICLE(particles(JP2)%X,particles(JP2)%Y,particles(JP2)%Z, &
                         C2(1),C2(2),C2(3),EROT,EVIB,P3_SP_ID,particles(JP2)%IC,DT, NEWparticle)
                         !WRITE(*,*) 'Should be adding particle!'
                         CALL ADD_PARTICLE_ARRAY(NEWparticle, NP_PROC, particles)
-                        JP3 = NP_PROC
+                        IP3 = NP_PROC
+                        SPWTP3 = SPECIES(P3_SP_ID)%SPWT
+
+                        IF (rf() > MINWTR/SPWTP3) REMOVE_PART(IP3) = .TRUE.
 
                         TOTDOF = TOTDOF - SPECIES(P4_SP_ID)%VIBDOF
                         EVIB = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, SPECIES(P4_SP_ID)%VIBDOF)
@@ -2131,24 +2168,28 @@ MODULE collisions
                         
                         CALL HS_SCATTER_NEWNEW(ECOLL, M1, M2, C1, C2)
                               
-                        particles(JP3)%VX = C1(1)
-                        particles(JP3)%VY = C1(2)
-                        particles(JP3)%VZ = C1(3)
+                        particles(IP3)%VX = C1(1)
+                        particles(IP3)%VY = C1(2)
+                        particles(IP3)%VZ = C1(3)
                               
                         
-                        CALL INIT_PARTICLE(particles(JP3)%X,particles(JP3)%Y,particles(JP3)%Z, &
-                        C2(1),C2(2),C2(3),EROT,EVIB,P3_SP_ID,particles(JP3)%IC,DT, NEWparticle)
+                        CALL INIT_PARTICLE(particles(IP3)%X,particles(IP3)%Y,particles(IP3)%Z, &
+                        C2(1),C2(2),C2(3),EROT,EVIB,P3_SP_ID,particles(IP3)%IC,DT, NEWparticle)
                         !WRITE(*,*) 'Should be adding particle!'
                         CALL ADD_PARTICLE_ARRAY(NEWparticle, NP_PROC, particles)
-                        
+                        IP4 = NP_PROC
+                        SPWTP4 = SPECIES(P4_SP_ID)%SPWT
+
+                        IF (rf() > MINWTR/SPWTP4) REMOVE_PART(IP4) = .TRUE.
+
                      END IF
                   END IF
 
-                  IF (JR == 3 .AND. PROC_ID == 0 .AND. .TRUE.) THEN
-                     OPEN(66338, FILE='reaction_energies', POSITION='append', STATUS='unknown', ACTION='write')
-                     WRITE(66338,*) EACOLL, ETRCOLL, ETRR1, ETRR2, ETRP1, ETRP2, ETRP3
-                     CLOSE(66338)
-                  END IF
+                  ! IF (JR == 3 .AND. PROC_ID == 0) THEN
+                  !    OPEN(66338, FILE='reaction_energies', POSITION='append', STATUS='unknown', ACTION='write')
+                  !    WRITE(66338,*) EACOLL, ETRCOLL, ETRR1, ETRR2, ETRP1, ETRP2, ETRP3
+                  !    CLOSE(66338)
+                  ! END IF
 
                   ! If this pair had a chemical reaction, exit and don't test any other reaction.
                   HAS_REACTED = .TRUE.
@@ -2159,6 +2200,15 @@ MODULE collisions
          END DO
 
       END DO
+
+
+      IP = NP_PROC
+      DO WHILE (IP .GE. 1)
+         IF (REMOVE_PART(IP)) CALL REMOVE_PARTICLE_ARRAY(IP, particles, NP_PROC)
+         IP = IP - 1
+      END DO
+
+      DEALLOCATE(REMOVE_PART)
 
    END SUBROUTINE MCC_COLLISIONS_VAHEDI
 

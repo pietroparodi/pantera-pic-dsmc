@@ -44,6 +44,8 @@ MODULE timecycle
 
       CHARACTER(len=512) :: stringTMP
 
+      INTEGER :: I, IPG
+
       ! Init variables
       NP_TOT = 0
       CALL INIT_POSTPROCESS
@@ -112,14 +114,35 @@ MODULE timecycle
       DO WHILE (tID .LE. NT)
 
 
-         CALL MPI_REDUCE(FIELD_POWER, FIELD_POWER_TOT, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
-         CALL MPI_BCAST(FIELD_POWER_TOT, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+         !CALL MPI_REDUCE(FIELD_POWER, FIELD_POWER_TOT, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+         !CALL MPI_BCAST(FIELD_POWER_TOT, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
          !FIELD_POWER_AVG(MOD(tID, FIELD_POWER_NUMAVG) + 1) = FIELD_POWER_TOT
-         !IF (MOD(tID, FIELD_POWER_NUMAVG) .EQ. 0) THEN
-         !   WRITE(*,*) 'Adjusting coil current.'
-         !   COIL_CURRENT = COIL_CURRENT*SQRT(FIELD_POWER_TARGET/(SUM(FIELD_POWER_AVG)/DBLE(FIELD_POWER_NUMAVG)))
-         !END IF
+         IPG = -1
+         DO I = 1, N_GRID_BC
+            IF (GRID_BC(I)%PHYSICAL_GROUP_NAME == 'UpperElectrode') IPG = I
+         END DO
+         FIELD_POWER_TOT = - GRID_BC(IPG)%DISPLACEMENT_CURRENT * (GRID_BC(IPG)%WALL_POTENTIAL &
+         + 0.5*GRID_BC(IPG)%WALL_RF_POTENTIAL*COS(2*PI*GRID_BC(IPG)%RF_FREQUENCY*tID*DT))
 
+         FIELD_POWER_AVG(MOD(tID, FIELD_POWER_NUMAVG) + 1) = FIELD_POWER_TOT
+
+
+         IF (tID .GE. FIELD_POWER_START) THEN
+            IF (MOD(tID-FIELD_POWER_START, FIELD_POWER_EVERY) .EQ. 0) THEN
+            !   COIL_CURRENT = COIL_CURRENT*SQRT(FIELD_POWER_TARGET/(SUM(FIELD_POWER_AVG)/DBLE(FIELD_POWER_NUMAVG)))
+
+               RF_GENERATOR_VOLTAGE = RF_GENERATOR_VOLTAGE &
+               * SQRT(FIELD_POWER_TARGET/(SUM(FIELD_POWER_AVG)/DBLE(FIELD_POWER_NUMAVG)))
+
+               IF (PROC_ID == 0) THEN
+                  WRITE(*,*) 'Adjusted rf generator voltage (phys. group ', IPG, ') to ', RF_GENERATOR_VOLTAGE, ' V.'
+                  WRITE(*,*) FIELD_POWER_AVG
+                  WRITE(*,*) SUM(FIELD_POWER_AVG)/DBLE(FIELD_POWER_NUMAVG)
+               END IF
+
+               GRID_BC(IPG)%WALL_RF_POTENTIAL = RF_GENERATOR_VOLTAGE
+            END IF
+         END IF
 
 
          ! IF (tID == 40001) THEN
@@ -155,7 +178,7 @@ MODULE timecycle
                            ' - number of collisions: ', NCOLL_TOT, &
                            ' - number of reactions: ', NREAC_TOT
 
-            ! Use this tho have the coil current and field power output to console.
+            ! Use this to have the coil current and field power output to console.
             ! WRITE(stringTMP, '(A13,I8,A4,I8,A9,ES14.3,A17,F10.1,A27,I5,A5,I2,A4,A24,I10, &
             ! A25,I10,A24,I10,A23,ES14.3,A4,A17,ES14.3,A4)') &
             !                '   Timestep: ', tID, ' of ', NT, &
@@ -301,7 +324,7 @@ MODULE timecycle
 
          IF (BOOL_THERMAL_BATH) CALL THERMAL_BATH
 
-
+         IF (MOD(tID, LIMIT_PARTICLE_EVERY) .EQ. 0 .AND. LIMIT_PARTICLE_NUMBER > 0) CALL LIMIT_PARTICLES()
 
 
          CALL TIMER_START(4)
@@ -619,7 +642,7 @@ MODULE timecycle
                      END DO
                   END IF
                ELSE IF (GRID_BC(FACE_PG)%FIELD_BC == SPICE_NODE_BC .AND. ABS(CHARGE) .GE. 1.d-6) THEN
-                  GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = GRID_BC(FACE_PG)%SPICE_NODE_CURRENT - QE*FNUM*CHARGE/DT
+                  GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = GRID_BC(FACE_PG)%SPICE_NODE_CURRENT - QE*FNUM*SPWT*CHARGE/DT
 
                ELSE IF(GRID_BC(FACE_PG)%FIELD_BC == CONDUCTIVE_BC .AND. ABS(CHARGE) .GE. 1.d-6) THEN
                   K = QE/(EPS0*EPS_SCALING**2)
@@ -1631,7 +1654,7 @@ MODULE timecycle
                               END DO
                            END IF
                         ELSE IF (GRID_BC(FACE_PG)%FIELD_BC == SPICE_NODE_BC .AND. ABS(CHARGE) .GE. 1.d-6) THEN
-                           GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = GRID_BC(FACE_PG)%SPICE_NODE_CURRENT + QE*FNUM*CHARGE/DT
+                           GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = GRID_BC(FACE_PG)%SPICE_NODE_CURRENT + QE*FNUM*SPWT*CHARGE/DT
 
                         ELSE IF(GRID_BC(FACE_PG)%FIELD_BC == CONDUCTIVE_BC .AND. ABS(CHARGE) .GE. 1.d-6) THEN
                            K = QE/(EPS0*EPS_SCALING**2)
@@ -2592,6 +2615,63 @@ MODULE timecycle
       END DO
 
    END SUBROUTINE REMOVE_PARTICLES_IN_MIXTURE
+
+
+   SUBROUTINE LIMIT_PARTICLES
+
+      IMPLICIT NONE
+
+      INTEGER :: JP, JS, IP
+      INTEGER, ALLOCATABLE, DIMENSION(:) :: NPS
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: SPWTNEW
+
+      ALLOCATE(NPS(N_SPECIES))
+      ALLOCATE(SPWTNEW(N_SPECIES))
+
+
+      ! Count number of particles
+      NPS = 0
+      DO JP = 1, NP_PROC
+         NPS(particles(JP)%S_ID) = NPS(particles(JP)%S_ID) + 1
+      END DO
+
+      ! Collect number from all the processes
+      IF (PROC_ID .EQ. 0) THEN
+         CALL MPI_REDUCE(MPI_IN_PLACE, NPS, N_SPECIES, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      ELSE
+         CALL MPI_REDUCE(NPS,          NPS, N_SPECIES, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      END IF
+      
+      CALL MPI_BCAST(NPS, N_SPECIES, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+
+      ! Compute the new weights
+      DO JS = 1, N_SPECIES
+         IF (NPS(JS) > LIMIT_PARTICLE_NUMBER) THEN
+            SPWTNEW(JS) = SPECIES(JS)%SPWT * DBLE(NPS(JS))/DBLE(LIMIT_PARTICLE_NUMBER)
+         ELSE
+            SPWTNEW(JS) = SPECIES(JS)%SPWT
+         END IF
+      END DO
+
+      ! Delete particles
+      IP = NP_PROC
+      DO WHILE (IP .GE. 1)
+         IF (rf() > DBLE(LIMIT_PARTICLE_NUMBER)/DBLE(NPS(particles(IP)%S_ID))) &
+         CALL REMOVE_PARTICLE_ARRAY(IP, particles, NP_PROC)
+         IP = IP - 1
+      END DO
+
+      ! Assign the new weigths
+      IF (PROC_ID == 0) WRITE(*,*) 'Assigning new particle weights:'
+      DO JS = 1, N_SPECIES
+         SPECIES(JS)%SPWT = SPWTNEW(JS)
+         IF (PROC_ID == 0) WRITE(*,*) SPECIES(JS)%NAME, ': ', SPECIES(JS)%SPWT
+      END DO
+
+      DEALLOCATE(NPS)
+      DEALLOCATE(SPWTNEW)
+
+   END SUBROUTINE LIMIT_PARTICLES
 
 
 END MODULE timecycle

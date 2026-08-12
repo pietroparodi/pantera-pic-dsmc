@@ -341,6 +341,9 @@ MODULE initialization
             REMOVE_MIX = MIXTURE_NAME_TO_ID(REMOVE_MIX_NAME)
          END IF
 
+         IF (line=='Limit_particle_number:')  READ(in1,*) LIMIT_PARTICLE_NUMBER
+         IF (line=='Limit_particle_every:')  READ(in1,*) LIMIT_PARTICLE_EVERY
+
          ! ~~~~~~~~~~~~~  Thermal bath  ~~~~~~~~~~~~~~~~~
          IF (line=='Thermal_bath_bool:')  READ(in1,*) BOOL_THERMAL_BATH
          IF (line=='Thermal_bath_Ttr:')  READ(in1,*) TBATH

@@ -2923,6 +2923,8 @@ MODULE fields
       INTEGER :: NEIGHBORPG
       REAL(KIND=8) :: CHARGE, K, PSIP, RHO_Q, SPWT
       INTEGER :: VP
+      REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: SURFACE_CHARGE_STEP
+
 
       !REAL(KIND=8) :: CHECKVALUE
 
@@ -3017,6 +3019,12 @@ MODULE fields
       LOCAL_BOUNDARY_COLL_COUNT = 0
       ALLOCATE(LOCAL_WALL_COLL_COUNT(N_WALLS*N_SPECIES))
       LOCAL_WALL_COLL_COUNT = 0
+
+      FIELD_POWER = 0
+
+      ALLOCATE(SURFACE_CHARGE_STEP(NNODES))
+      SURFACE_CHARGE_STEP = 0.d0
+
 
       DO IP = 1, NP_PROC
          SPWT = SPECIES(part_adv(IP)%S_ID)%SPWT
@@ -3595,7 +3603,7 @@ MODULE fields
                                  VP = U1D_GRID%CELL_NODES(I,IC)
                                  PSIP = U1D_GRID%BASIS_COEFFS(1,I,IC)*part_adv(IP)%X &
                                       + U1D_GRID%BASIS_COEFFS(2,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
+                                 SURFACE_CHARGE_STEP(VP) = SURFACE_CHARGE_STEP(VP) + RHO_Q*PSIP
                               END DO
                            ELSE IF (DIMS == 2) THEN
                               RHO_Q = K*CHARGE*FNUM*SPWT/(ZMAX-ZMIN)
@@ -3604,7 +3612,7 @@ MODULE fields
                                  PSIP = U2D_GRID%BASIS_COEFFS(1,I,IC)*part_adv(IP)%X &
                                       + U2D_GRID%BASIS_COEFFS(2,I,IC)*part_adv(IP)%Y &
                                       + U2D_GRID%BASIS_COEFFS(3,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
+                                 SURFACE_CHARGE_STEP(VP) = SURFACE_CHARGE_STEP(VP) + RHO_Q*PSIP
                               END DO
                            ELSE IF (DIMS == 3) THEN
                               RHO_Q = K*CHARGE*FNUM*SPWT
@@ -3614,9 +3622,23 @@ MODULE fields
                                       + U3D_GRID%BASIS_COEFFS(2,I,IC)*part_adv(IP)%Y &
                                       + U3D_GRID%BASIS_COEFFS(3,I,IC)*part_adv(IP)%Z &
                                       + U3D_GRID%BASIS_COEFFS(4,I,IC)
-                                 SURFACE_CHARGE(VP) = SURFACE_CHARGE(VP) + RHO_Q*PSIP
+                                 SURFACE_CHARGE_STEP(VP) = SURFACE_CHARGE_STEP(VP) + RHO_Q*PSIP
                               END DO
                            END IF
+                        ELSE IF (GRID_BC(FACE_PG)%FIELD_BC == SPICE_NODE_BC .AND. ABS(CHARGE) .GE. 1.d-6 .AND. FINAL) THEN
+                           GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = GRID_BC(FACE_PG)%SPICE_NODE_CURRENT + QE*FNUM*SPWT*CHARGE/DT
+
+                        ELSE IF(GRID_BC(FACE_PG)%FIELD_BC == CONDUCTIVE_BC .AND. ABS(CHARGE) .GE. 1.d-6 .AND. FINAL) THEN
+                           K = QE/(EPS0*EPS_SCALING**2)
+                           IF (DIMS == 1) THEN
+                              RHO_Q = K*CHARGE*FNUM*SPWT/(YMAX-YMIN)/(ZMAX-ZMIN)
+                           ELSE IF (DIMS == 2) THEN
+                              RHO_Q = K*CHARGE*FNUM*SPWT/(ZMAX-ZMIN)
+                           ELSE IF (DIMS == 3) THEN
+                              RHO_Q = K*CHARGE*FNUM*SPWT
+                           END IF
+
+                           GRID_BC(FACE_PG)%METAL_TOTAL_CHARGE = GRID_BC(FACE_PG)%METAL_TOTAL_CHARGE + RHO_Q
                         END IF
 
                         ! Apply particle boundary condition
@@ -3736,8 +3758,13 @@ MODULE fields
                                  CALL TALLY_PARTICLE_TO_BOUNDARY(.TRUE., part_adv(IP), IC, BOUNDCOLL)
                               END IF
                            END IF
-                        END IF
 
+                           CHARGE = SPECIES(particles(IP)%S_ID)%CHARGE
+                           SPWT = SPECIES(particles(IP)%S_ID)%SPWT
+                           IF (GRID_BC(FACE_PG)%FIELD_BC == SPICE_NODE_BC .AND. ABS(CHARGE) .GE. 1.d-6) THEN
+                              GRID_BC(FACE_PG)%SPICE_NODE_CURRENT = GRID_BC(FACE_PG)%SPICE_NODE_CURRENT - QE*FNUM*SPWT*CHARGE/DT
+                           END IF
+                        END IF
                      ELSE
                         REMOVE_PART(IP) = .TRUE.
                         part_adv(IP)%DTRIM = 0.d0
@@ -4133,6 +4160,30 @@ MODULE fields
       DEALLOCATE(LOCAL_BOUNDARY_COLL_COUNT)
       DEALLOCATE(LOCAL_WALL_COLL_COUNT)
 
+
+
+      IF ((tID .GT. DUMP_PART_BOUND_START) .AND. (tID .NE. RESTART_TIMESTEP) .AND. FINAL) THEN
+         IF (MOD(tID-DUMP_PART_BOUND_START, DUMP_PART_BOUND_EVERY) .EQ. 0) THEN
+            CALL DUMP_BOUNDARY_PARTICLES_FILE(tID)
+            IF (ALLOCATED(part_dump)) DEALLOCATE(part_dump)
+            NP_DUMP_PROC = 0
+         END IF
+      END IF
+
+      IF (FINAL) THEN
+         IF (PROC_ID .EQ. 0) THEN
+            CALL MPI_REDUCE(MPI_IN_PLACE, SURFACE_CHARGE_STEP, NNODES, &
+            MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+         ELSE
+            CALL MPI_REDUCE(SURFACE_CHARGE_STEP, SURFACE_CHARGE_STEP, NNODES, &
+            MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+         END IF
+
+         CALL MPI_BCAST(SURFACE_CHARGE_STEP, NNODES, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+
+         SURFACE_CHARGE = SURFACE_CHARGE + SURFACE_CHARGE_STEP
+      END IF
+      DEALLOCATE(SURFACE_CHARGE_STEP)
       ! IF (tID == 4 .AND. FINAL) THEN
       !    CLOSE(66332)
       ! END IF
