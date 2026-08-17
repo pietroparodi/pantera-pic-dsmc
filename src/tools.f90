@@ -336,14 +336,15 @@ CONTAINS
 
       ! Open file for writing
       IF (BOOL_BINARY_OUTPUT) THEN
-         OPEN(10, FILE=filename, ACCESS='SEQUENTIAL', FORM='UNFORMATTED', STATUS='NEW', CONVERT='BIG_ENDIAN', RECL=80)
+         OPEN(10, FILE=filename, ACCESS='SEQUENTIAL', FORM='UNFORMATTED', STATUS='NEW', CONVERT='BIG_ENDIAN', RECL=88)
          DO IP = 1, NP_PROC
             IF (PARTDUMP_FRACSAMPLE < 1) THEN
                IF (rf() > PARTDUMP_FRACSAMPLE) CYCLE
             END IF
             WRITE(10) particles(IP)%X, particles(IP)%Y, particles(IP)%Z, &
             particles(IP)%VX, particles(IP)%VY, particles(IP)%VZ, particles(IP)%EROT, particles(IP)%EVIB, &
-            particles(IP)%S_ID, particles(IP)%IC, particles(IP)%DTRIM
+            particles(IP)%S_ID, particles(IP)%IC, particles(IP)%DTRIM, &
+            SPECIES(particles(IP)%S_ID)%SPWT
          END DO
          CLOSE(10)
       ELSE
@@ -355,7 +356,8 @@ CONTAINS
             END IF
             WRITE(10,*) particles(IP)%X, particles(IP)%Y, particles(IP)%Z, &
             particles(IP)%VX, particles(IP)%VY, particles(IP)%VZ, particles(IP)%EROT, particles(IP)%EVIB, &
-            particles(IP)%S_ID, particles(IP)%IC, particles(IP)%DTRIM
+            particles(IP)%S_ID, particles(IP)%IC, particles(IP)%DTRIM, &
+            SPECIES(particles(IP)%S_ID)%SPWT
          END DO
          CLOSE(10)
       END IF
@@ -414,16 +416,21 @@ CONTAINS
       CHARACTER(LEN=512)  :: filename
       INTEGER :: ios
 
-      REAL(KIND=8) :: XP, YP, ZP, VX, VY, VZ, EROT, EVIB, DTRIM
-      INTEGER      :: S_ID, IC
+      REAL(KIND=8) :: XP, YP, ZP, VX, VY, VZ, EROT, EVIB, DTRIM, SPWT
+      INTEGER      :: S_ID, IC, JS
       TYPE(PARTICLE_DATA_STRUCTURE) :: particleNOW
       character(len=100) :: iomsg
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: SPWEIGHTS
+
+      ALLOCATE(SPWEIGHTS(N_SPECIES))
+      SPWEIGHTS = 1.d0
+
       WRITE(filename, "(A,A,I0.5,A6,I0.8)") TRIM(ADJUSTL(RESTART_PATH)), "proc_", PROC_ID, "_time_", TIMESTEP ! Compose filename
 
       ! Open file for reading
       IF (BOOL_BINARY_OUTPUT) THEN
          OPEN(1010, FILE=filename, ACCESS='SEQUENTIAL', FORM='UNFORMATTED', STATUS='OLD', &
-         CONVERT='BIG_ENDIAN', RECL=80, IOSTAT=ios, IOMSG=iomsg)
+         CONVERT='BIG_ENDIAN', RECL=88, IOSTAT=ios, IOMSG=iomsg)
 
          IF (ios .NE. 0) THEN
             WRITE(*,*) 'iomsg was ', iomsg
@@ -431,7 +438,7 @@ CONTAINS
          ENDIF
 
          DO
-            READ(1010, IOSTAT=ios) XP, YP, ZP, VX, VY, VZ, EROT, EVIB, S_ID, IC, DTRIM
+            READ(1010, IOSTAT=ios) XP, YP, ZP, VX, VY, VZ, EROT, EVIB, S_ID, IC, DTRIM, SPWT
 
             IF (ios < 0) EXIT
             IF (PARTLOAD_FRACSAMPLE < 1) THEN
@@ -439,6 +446,8 @@ CONTAINS
             END IF
             CALL INIT_PARTICLE(XP,YP,ZP,VX,VY,VZ,EROT,EVIB,S_ID,IC,DT, particleNOW) ! Save in particle
             CALL ADD_PARTICLE_ARRAY(particleNOW, NP_PROC, particles) ! Add particle to local array
+
+            SPWEIGHTS(S_ID) = SPWT
          END DO
 
          CLOSE(1010)
@@ -450,18 +459,25 @@ CONTAINS
          ENDIF
 
          DO
-            READ(1010,*,IOSTAT=ios) XP, YP, ZP, VX, VY, VZ, EROT, EVIB, S_ID, IC, DTRIM
+            READ(1010,*,IOSTAT=ios) XP, YP, ZP, VX, VY, VZ, EROT, EVIB, S_ID, IC, DTRIM, SPWT
             IF (ios < 0) EXIT
             IF (PARTLOAD_FRACSAMPLE < 1) THEN
                IF (rf() > PARTLOAD_FRACSAMPLE) CYCLE
             END IF
             CALL INIT_PARTICLE(XP,YP,ZP,VX,VY,VZ,EROT,EVIB,S_ID,IC,DT, particleNOW) ! Save in particle
             CALL ADD_PARTICLE_ARRAY(particleNOW, NP_PROC, particles) ! Add particle to local array
+
+            SPWEIGHTS(S_ID) = SPWT
          END DO
 
          CLOSE(1010)
       END IF
 
+      DO JS = 1, N_SPECIES
+         SPECIES(JS)%SPWT = SPWEIGHTS(JS)
+      END DO
+      
+      DEALLOCATE(SPWEIGHTS)
 
 
    END SUBROUTINE READ_PARTICLES_FILE
