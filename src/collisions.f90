@@ -2078,6 +2078,8 @@ MODULE collisions
                         particles(IP2)%VX = C2(1)
                         particles(IP2)%VY = C2(2)
                         particles(IP2)%VZ = C2(3)
+
+                        ETRP2 = 0.5*M2*(C2(1)**2 + C2(2)**2 + C2(3)**2)
                      ELSE IF (REACTIONS(JR)%N_PROD == 3) THEN
                         TOTDOF = TOTDOF - SPECIES(P3_SP_ID)%VIBDOF
                         EVIB = COLL_INTERNAL_ENERGY(ECOLL, TOTDOF, SPECIES(P3_SP_ID)%VIBDOF)
@@ -2185,7 +2187,7 @@ MODULE collisions
                      END IF
                   END IF
 
-                  ! IF (JR == 3 .AND. PROC_ID == 0) THEN
+                  ! IF (JR == 10 .AND. PROC_ID == 0) THEN
                   !    OPEN(66338, FILE='reaction_energies', POSITION='append', STATUS='unknown', ACTION='write')
                   !    WRITE(66338,*) EACOLL, ETRCOLL, ETRR1, ETRR2, ETRP1, ETRP2, ETRP3
                   !    CLOSE(66338)

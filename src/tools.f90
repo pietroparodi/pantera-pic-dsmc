@@ -1033,7 +1033,12 @@ CONTAINS
             CALL ERROR_ABORT('Attention, restart file not found! ABORTING.')
          ENDIF
 
-         READ(1025, IOSTAT=ios) SURFACE_CHARGE
+         READ(1025, IOSTAT=ios) SURFACE_CHARGE, RF_GENERATOR_VOLTAGE, FIELD_POWER_AVG
+
+         IF (PROC_ID == 0) THEN
+            WRITE(*,*) 'Read RF_GENERATOR_VOLTAGE ', RF_GENERATOR_VOLTAGE
+            WRITE(*,*) 'Read FIELD_POWER_AVG ', FIELD_POWER_AVG
+         END IF
 
          CLOSE(1025)
       ELSE
@@ -1043,7 +1048,7 @@ CONTAINS
             CALL ERROR_ABORT('Attention, restart file not found! ABORTING.')
          ENDIF
 
-         READ(1025,*,IOSTAT=ios) SURFACE_CHARGE
+         READ(1025,*,IOSTAT=ios) SURFACE_CHARGE, RF_GENERATOR_VOLTAGE, FIELD_POWER_AVG
 
          CLOSE(1025)
       END IF
@@ -1078,7 +1083,7 @@ CONTAINS
                CALL ERROR_ABORT('Attention, could not open restart file for writing! ABORTING.')
             ENDIF
 
-            WRITE(1010, IOSTAT=ios) SURFACE_CHARGE
+            WRITE(1010, IOSTAT=ios) SURFACE_CHARGE, RF_GENERATOR_VOLTAGE, FIELD_POWER_AVG
             !IF (ios < 0) EXIT
 
             CLOSE(1010)
@@ -1089,7 +1094,7 @@ CONTAINS
                CALL ERROR_ABORT('Attention, could not open restart file for writing! ABORTING.')
             ENDIF
 
-            WRITE(1010,*,IOSTAT=ios) SURFACE_CHARGE
+            WRITE(1010,*,IOSTAT=ios) SURFACE_CHARGE, RF_GENERATOR_VOLTAGE, FIELD_POWER_AVG
             !IF (ios < 0) EXIT
 
             CLOSE(1010)

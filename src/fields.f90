@@ -2440,10 +2440,10 @@ MODULE fields
          !WRITE(*,*) ' PHI_FIELD = ', PHI_FIELD
          WRITE(*,*) '||RESIDUAL|| = ', norm !, ' with potential ', PHIBAR_FIELD
    
-         WRITE(filename, "(A,A)") TRIM(ADJUSTL(RESIDUAL_SAVE_PATH)), "residuals" ! Compose filename   
-         OPEN(66331, FILE=filename, POSITION='append', STATUS='unknown', ACTION='write')
-         WRITE(66331,*) tID, norm
-         CLOSE(66331)
+         ! WRITE(filename, "(A,A)") TRIM(ADJUSTL(RESIDUAL_SAVE_PATH)), "residuals" ! Compose filename   
+         ! OPEN(66331, FILE=filename, POSITION='append', STATUS='unknown', ACTION='write')
+         ! WRITE(66331,*) tID, norm
+         ! CLOSE(66331)
       END IF
 
       DEALLOCATE(RHS_NEW)

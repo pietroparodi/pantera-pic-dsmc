@@ -52,10 +52,13 @@ MODULE timecycle
       CALL INIT_BOUNDARY_POSTPROCESS
       ! CALL BOUNDARY_RESET
 
-      ALLOCATE(FIELD_POWER_AVG(FIELD_POWER_NUMAVG))
-      FIELD_POWER_AVG = FIELD_POWER_TARGET
-
       ! ########### Compute poisson ##########################################
+
+      IPG = -1
+      DO I = 1, N_GRID_BC
+         IF (GRID_BC(I)%PHYSICAL_GROUP_NAME == 'UpperElectrode') IPG = I
+      END DO
+      GRID_BC(IPG)%WALL_RF_POTENTIAL = RF_GENERATOR_VOLTAGE
 
       IF (PIC_TYPE .NE. NONE) THEN
 
