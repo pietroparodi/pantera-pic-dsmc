@@ -142,6 +142,11 @@ MODULE initialization
             CALL DEF_EVAPORATION_EMIT(BC_DEFINITION)
          END IF
 
+         IF (line=='Presheath_emit:') THEN
+            READ(in1,'(A)') BC_DEFINITION
+            CALL DEF_PRESHEATH_EMIT(BC_DEFINITION)
+         END IF
+
          IF (line=='Solenoid_field:') THEN
             READ(in1,'(A)') SOLENOID_DEFINITION
             CALL DEF_SOLENOID(SOLENOID_DEFINITION)
@@ -340,6 +345,8 @@ MODULE initialization
             READ(in1,*) REMOVE_MIX_NAME
             REMOVE_MIX = MIXTURE_NAME_TO_ID(REMOVE_MIX_NAME)
          END IF
+
+         IF (line=='Remove_probability:')  READ(in1,*) REMOVE_PROB
 
          IF (line=='Limit_particle_number:')  READ(in1,*) LIMIT_PARTICLE_NUMBER
          IF (line=='Limit_particle_every:')  READ(in1,*) LIMIT_PARTICLE_EVERY
@@ -1689,6 +1696,160 @@ MODULE initialization
 
 
    END SUBROUTINE DEF_BOUNDARY_EMIT
+
+
+   SUBROUTINE DEF_PRESHEATH_EMIT(DEFINITION)
+
+      IMPLICIT NONE
+
+      CHARACTER(LEN=*), INTENT(IN) :: DEFINITION
+
+      INTEGER :: N_STR
+      CHARACTER(LEN=80), ALLOCATABLE :: STRARRAY(:)
+
+      CHARACTER*64 :: MIX_NAME, VDF_NAME
+      INTEGER      :: MIX_ID, I, IC, IPG
+      TYPE(EMIT_TASK_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: TEMP_EMIT_TASKS
+      CLASS(VELOCITY_DISTRIBUTION_STRUCTURE), ALLOCATABLE :: TEMP_VDF
+
+      REAL(KIND=8) :: NRHO, UX, UY, UZ, TTRA, TROT, TVIB
+
+      CALL SPLIT_STR(DEFINITION, ' ', STRARRAY, N_STR)
+
+      IPG = -1
+      DO I = 1, N_GRID_BC
+         IF (GRID_BC(I)%PHYSICAL_GROUP_NAME == STRARRAY(1)) IPG = I
+      END DO
+      IF (IPG == -1) CALL ERROR_ABORT('Error in boundary emit definition. Group name not found.')
+
+
+      READ(STRARRAY(2),'(A10)') MIX_NAME
+      READ(STRARRAY(3), '(ES14.0)') NRHO
+      READ(STRARRAY(4), '(ES14.0)') UX
+      READ(STRARRAY(5), '(ES14.0)') UY
+      READ(STRARRAY(6), '(ES14.0)') UZ
+      READ(STRARRAY(7), '(ES14.0)') TTRA
+      READ(STRARRAY(8),'(ES14.0)') TROT
+      READ(STRARRAY(9),'(ES14.0)') TVIB
+      READ(STRARRAY(10),'(A10)') VDF_NAME
+
+      CALL ASSIGN_VDF(TEMP_VDF, VDF_NAME)
+
+
+      MIX_ID = MIXTURE_NAME_TO_ID(MIX_NAME)
+
+      ! WRITE(*,*) 'Read boundary emit definition. Parameters: ', IPG, ', ', MIX_NAME, ', ', MIX_ID, ', ', NRHO, ', ',&
+      !  UX, ', ', UY, ', ', UZ, ', ', TTRA, ', ', TROT, ', ', TVIB
+      IF (DIMS == 1) THEN 
+         DO IC = 1, NCELLS
+            DO I = 1, 2
+               IF (U1D_GRID%CELL_EDGES_PG(I,IC) == IPG) THEN
+                  
+                  IF (ALLOCATED(EMIT_TASKS)) THEN
+                     ALLOCATE(TEMP_EMIT_TASKS(N_EMIT_TASKS+1)) ! Append the mixture to the list
+                     TEMP_EMIT_TASKS(1:N_EMIT_TASKS) = EMIT_TASKS(1:N_EMIT_TASKS)
+                     CALL MOVE_ALLOC(TEMP_EMIT_TASKS, EMIT_TASKS)
+                  ELSE
+                     ALLOCATE(EMIT_TASKS(1))
+                  END IF
+                  N_EMIT_TASKS = N_EMIT_TASKS + 1
+   
+                  EMIT_TASKS(N_EMIT_TASKS)%NRHO = NRHO
+                  EMIT_TASKS(N_EMIT_TASKS)%UX = UX
+                  EMIT_TASKS(N_EMIT_TASKS)%UY = UY
+                  EMIT_TASKS(N_EMIT_TASKS)%UZ = UZ
+                  EMIT_TASKS(N_EMIT_TASKS)%TTRA = TTRA
+                  EMIT_TASKS(N_EMIT_TASKS)%TROT = TROT
+                  EMIT_TASKS(N_EMIT_TASKS)%TVIB = TVIB
+                  EMIT_TASKS(N_EMIT_TASKS)%MIX_ID = MIX_ID
+                  EMIT_TASKS(N_EMIT_TASKS)%IC = IC
+                  EMIT_TASKS(N_EMIT_TASKS)%IFACE = I
+                  ALLOCATE(EMIT_TASKS(N_EMIT_TASKS)%VDF, SOURCE=TEMP_VDF)
+   
+                  EMIT_TASKS(N_EMIT_TASKS)%IV1 = U1D_GRID%CELL_NODES(I,IC)
+
+                  EMIT_TASKS(N_EMIT_TASKS)%TYPE = PRESHEATH
+                  ! NFS WILL BE INITIALIZED LATER.
+               END IF
+            END DO
+         END DO
+      ELSE IF (DIMS == 2) THEN
+         DO IC = 1, NCELLS
+            DO I = 1, 3
+               IF (U2D_GRID%CELL_EDGES_PG(I,IC) == IPG) THEN
+                  
+                  IF (ALLOCATED(EMIT_TASKS)) THEN
+                     ALLOCATE(TEMP_EMIT_TASKS(N_EMIT_TASKS+1)) ! Append the mixture to the list
+                     TEMP_EMIT_TASKS(1:N_EMIT_TASKS) = EMIT_TASKS(1:N_EMIT_TASKS)
+                     CALL MOVE_ALLOC(TEMP_EMIT_TASKS, EMIT_TASKS)
+                  ELSE
+                     ALLOCATE(EMIT_TASKS(1))
+                  END IF
+                  N_EMIT_TASKS = N_EMIT_TASKS + 1
+   
+                  EMIT_TASKS(N_EMIT_TASKS)%NRHO = NRHO
+                  EMIT_TASKS(N_EMIT_TASKS)%UX = UX
+                  EMIT_TASKS(N_EMIT_TASKS)%UY = UY
+                  EMIT_TASKS(N_EMIT_TASKS)%UZ = UZ
+                  EMIT_TASKS(N_EMIT_TASKS)%TTRA = TTRA
+                  EMIT_TASKS(N_EMIT_TASKS)%TROT = TROT
+                  EMIT_TASKS(N_EMIT_TASKS)%TVIB = TVIB
+                  EMIT_TASKS(N_EMIT_TASKS)%MIX_ID = MIX_ID
+                  EMIT_TASKS(N_EMIT_TASKS)%IC = IC
+                  EMIT_TASKS(N_EMIT_TASKS)%IFACE = I
+                  ALLOCATE(EMIT_TASKS(N_EMIT_TASKS)%VDF, SOURCE=TEMP_VDF)
+   
+                  
+                  IF (I == 1) THEN
+                     EMIT_TASKS(N_EMIT_TASKS)%IV1 = U2D_GRID%CELL_NODES(1,IC)
+                     EMIT_TASKS(N_EMIT_TASKS)%IV2 = U2D_GRID%CELL_NODES(2,IC)
+                  ELSE IF (I == 2) THEN
+                     EMIT_TASKS(N_EMIT_TASKS)%IV1 = U2D_GRID%CELL_NODES(2,IC)
+                     EMIT_TASKS(N_EMIT_TASKS)%IV2 = U2D_GRID%CELL_NODES(3,IC)
+                  ELSE
+                     EMIT_TASKS(N_EMIT_TASKS)%IV1 = U2D_GRID%CELL_NODES(3,IC)
+                     EMIT_TASKS(N_EMIT_TASKS)%IV2 = U2D_GRID%CELL_NODES(1,IC)
+                  END IF
+                  
+                  EMIT_TASKS(N_EMIT_TASKS)%TYPE = PRESHEATH
+                  ! NFS WILL BE INITIALIZED LATER.
+               END IF
+            END DO
+         END DO
+      ELSE IF (DIMS == 3) THEN
+         DO IC = 1, NCELLS
+            DO I = 1, 4
+               IF (U3D_GRID%CELL_FACES_PG(I,IC) == IPG) THEN
+                  IF (ALLOCATED(EMIT_TASKS)) THEN
+                     ALLOCATE(TEMP_EMIT_TASKS(N_EMIT_TASKS+1)) ! Append the mixture to the list
+                     TEMP_EMIT_TASKS(1:N_EMIT_TASKS) = EMIT_TASKS(1:N_EMIT_TASKS)
+                     CALL MOVE_ALLOC(TEMP_EMIT_TASKS, EMIT_TASKS)
+                  ELSE
+                     ALLOCATE(EMIT_TASKS(1))
+                  END IF
+                  N_EMIT_TASKS = N_EMIT_TASKS + 1
+   
+                  EMIT_TASKS(N_EMIT_TASKS)%NRHO = NRHO
+                  EMIT_TASKS(N_EMIT_TASKS)%UX = UX
+                  EMIT_TASKS(N_EMIT_TASKS)%UY = UY
+                  EMIT_TASKS(N_EMIT_TASKS)%UZ = UZ
+                  EMIT_TASKS(N_EMIT_TASKS)%TTRA = TTRA
+                  EMIT_TASKS(N_EMIT_TASKS)%TROT = TROT
+                  EMIT_TASKS(N_EMIT_TASKS)%TVIB = TVIB
+                  EMIT_TASKS(N_EMIT_TASKS)%MIX_ID = MIX_ID
+                  EMIT_TASKS(N_EMIT_TASKS)%IC = IC
+                  EMIT_TASKS(N_EMIT_TASKS)%IFACE = I
+                  ALLOCATE(EMIT_TASKS(N_EMIT_TASKS)%VDF, SOURCE=TEMP_VDF)
+   
+                  EMIT_TASKS(N_EMIT_TASKS)%TYPE = PRESHEATH
+                  ! NFS WILL BE INITIALIZED LATER.
+               END IF
+            END DO
+         END DO
+      END IF
+
+   END SUBROUTINE DEF_PRESHEATH_EMIT
+
 
    SUBROUTINE DEF_THERMIONIC_EMIT(DEFINITION)
 
@@ -3170,7 +3331,7 @@ MODULE initialization
          ! Calculate number of injected particles based on EMIT_TASK type
 
          !!! UNIFORM !!!
-         IF (EMIT_TASKS(ITASK)%TYPE == UNIFORM) THEN
+         IF (EMIT_TASKS(ITASK)%TYPE == UNIFORM .OR. EMIT_TASKS(ITASK)%TYPE == PRESHEATH) THEN
             DO IS = 1, N_COMP ! Loop on mixture components
                ! The species ID of the component
                S_ID = MIXTURES(EMIT_TASKS(ITASK)%MIX_ID)%COMPONENTS(IS)%ID

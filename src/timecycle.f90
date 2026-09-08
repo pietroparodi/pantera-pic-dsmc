@@ -26,6 +26,7 @@ MODULE timecycle
    USE postprocess
    USE fields
    USE washboard
+   USE initialization
 
    CONTAINS
 
@@ -54,11 +55,13 @@ MODULE timecycle
 
       ! ########### Compute poisson ##########################################
 
+      ! Start of special implementation for CCP cell.
       IPG = -1
       DO I = 1, N_GRID_BC
          IF (GRID_BC(I)%PHYSICAL_GROUP_NAME == 'UpperElectrode') IPG = I
       END DO
       GRID_BC(IPG)%WALL_RF_POTENTIAL = RF_GENERATOR_VOLTAGE
+      ! End of special implementation for CCP cell.
 
       IF (PIC_TYPE .NE. NONE) THEN
 
@@ -120,6 +123,8 @@ MODULE timecycle
          !CALL MPI_REDUCE(FIELD_POWER, FIELD_POWER_TOT, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
          !CALL MPI_BCAST(FIELD_POWER_TOT, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
          !FIELD_POWER_AVG(MOD(tID, FIELD_POWER_NUMAVG) + 1) = FIELD_POWER_TOT
+
+         ! Start of special implementation for CCP cell.
          IPG = -1
          DO I = 1, N_GRID_BC
             IF (GRID_BC(I)%PHYSICAL_GROUP_NAME == 'UpperElectrode') IPG = I
@@ -146,6 +151,7 @@ MODULE timecycle
                GRID_BC(IPG)%WALL_RF_POTENTIAL = RF_GENERATOR_VOLTAGE
             END IF
          END IF
+         ! End of special implementation for CCP cell.
 
 
          ! IF (tID == 40001) THEN
@@ -380,6 +386,8 @@ MODULE timecycle
 
          IF (REMOVE_MIX .NE. -1) CALL REMOVE_PARTICLES_IN_MIXTURE(REMOVE_MIX)
 
+         CALL ADJUST_PRESHEATH_VELOCITIES
+
 
          !IF (PERFORM_CHECKS .AND. MOD(tID, CHECKS_EVERY) .EQ. 0) THEN
          !   CALL ONLYMASTERPRINT1(PROC_ID, '---> Checking if particles are in the correct cells.')
@@ -485,7 +493,7 @@ MODULE timecycle
 
             DO IP = 1, NFS ! Loop on particles to be injected
 
-               IF (EMIT_TASK%TYPE == UNIFORM) THEN
+               IF (EMIT_TASK%TYPE == UNIFORM .OR. EMIT_TASK%TYPE == PRESHEATH) THEN
                   CALL EMIT_TASK%VDF%SAMPLE_VELOCITY(0.d0, 0.d0, 0.d0, &
                   EMIT_TASK%TTRA, EMIT_TASK%TTRA, EMIT_TASK%TTRA, &
                   Vdummy, V_TANG1, V_TANG2, M)
@@ -743,8 +751,8 @@ MODULE timecycle
                   IF (NP_INIT == 0) CYCLE
 
                   IF (DIMS == 1) THEN
-                     V1 = U1D_GRID%NODE_COORDS(:,U2D_GRID%CELL_NODES(1,IC))
-                     V2 = U1D_GRID%NODE_COORDS(:,U2D_GRID%CELL_NODES(2,IC))
+                     V1 = U1D_GRID%NODE_COORDS(:,U1D_GRID%CELL_NODES(1,IC))
+                     V2 = U1D_GRID%NODE_COORDS(:,U1D_GRID%CELL_NODES(2,IC))
                      V3 = 0
                      V4 = 0
                   ELSE IF (DIMS == 2) THEN
@@ -765,10 +773,6 @@ MODULE timecycle
                      S = rf()
                      T = rf()
                      U = rf()
-                     
-                     IF (S+T > 1) THEN
-                        S = 1-S; T = 1-T
-                     END IF
 
                      IF (DIMS == 1) THEN
                         IF (AXI) THEN
@@ -781,6 +785,10 @@ MODULE timecycle
                            ZP = ZMIN + (ZMAX-ZMIN)*U
                         END IF
                      ELSE IF (DIMS == 2) THEN
+                        IF (S+T > 1) THEN
+                           S = 1-S; T = 1-T
+                        END IF
+
                         XP = V1(1) + (V2(1)-V1(1))*S + (V3(1)-V1(1))*T
                         YP = V1(2) + (V2(2)-V1(2))*S + (V3(2)-V1(2))*T
                         IF (AXI) THEN
@@ -789,6 +797,9 @@ MODULE timecycle
                            ZP = ZMIN + (ZMAX-ZMIN)*U
                         END IF
                      ELSE IF (DIMS == 3) THEN
+                        IF (S+T > 1) THEN
+                           S = 1-S; T = 1-T
+                        END IF
                         ! http://vcg.isti.cnr.it/publications/papers/rndtetra_a.pdf
 
                         IF (S+T+U <= 1) THEN
@@ -806,8 +817,6 @@ MODULE timecycle
                         ZP = V1(3) + (V2(3)-V1(3))*P + (V3(3)-V1(3))*Q + (V4(3)-V1(3))*R
                      END IF
 
-                     IF (SQRT(XP**2 + YP**2) .GE. 0.005) CYCLE
-
                      ! Assign velocity and energy following a Boltzmann distribution
                      M = SPECIES(S_ID)%MOLECULAR_MASS
                      CALL VOLUME_INJECT_TASKS(ITASK)%VDF%SAMPLE_VELOCITY( &
@@ -822,7 +831,7 @@ MODULE timecycle
                      CALL INTERNAL_ENERGY(SPECIES(S_ID)%ROTDOF, VOLUME_INJECT_TASKS(ITASK)%TROT, EROT)
                      CALL INTERNAL_ENERGY(SPECIES(S_ID)%VIBDOF, VOLUME_INJECT_TASKS(ITASK)%TVIB, EVIB)
 
-                     CALL INIT_PARTICLE(XP,YP,ZP,VXP,VYP,VZP,EROT,EVIB,S_ID,IC,DT, particleNOW) ! Save in particle
+                     CALL INIT_PARTICLE(XP,YP,ZP,VXP,VYP,VZP,EROT,EVIB,S_ID,IC,DT*rf(), particleNOW) ! Save in particle
                      CALL ADD_PARTICLE_ARRAY(particleNOW, NP_PROC, particles) ! Add particle to local array
                   END DO
                END DO
@@ -2599,7 +2608,9 @@ MODULE timecycle
 
       IP = NP_PROC
       DO WHILE (IP .GE. 1)
-         IF (particles(IP)%S_ID == SP_ID) CALL REMOVE_PARTICLE_ARRAY(IP, particles, NP_PROC)
+         IF (particles(IP)%S_ID == SP_ID .AND. rf() <= REMOVE_PROB) THEN
+            CALL REMOVE_PARTICLE_ARRAY(IP, particles, NP_PROC)
+         END IF
          IP = IP - 1
       END DO
 
@@ -2676,5 +2687,25 @@ MODULE timecycle
 
    END SUBROUTINE LIMIT_PARTICLES
 
+
+   SUBROUTINE ADJUST_PRESHEATH_VELOCITIES
+
+      IMPLICIT NONE
+
+      REAL(KIND=8), DIMENSION(3) :: E_CELL
+      INTEGER :: I
+
+      DO I = 1, N_EMIT_TASKS
+         IF (EMIT_TASKS(I)%TYPE == PRESHEATH) THEN
+            E_CELL = E_FIELD(:,1,EMIT_TASKS(I)%IC)
+            EMIT_TASKS(I)%UX = EMIT_TASKS(I)%UX + QE/6.64d-26*DT*E_CELL(1)
+            EMIT_TASKS(I)%UY = EMIT_TASKS(I)%UY + QE/6.64d-26*DT*E_CELL(2)
+            EMIT_TASKS(I)%UZ = EMIT_TASKS(I)%UZ + QE/6.64d-26*DT*E_CELL(3)
+            IF (I == 1) WRITE(*,*) EMIT_TASKS(I)%UX, EMIT_TASKS(I)%UY, EMIT_TASKS(I)%UZ
+         END IF
+      END DO
+      CALL INITINJECTION
+
+   END SUBROUTINE ADJUST_PRESHEATH_VELOCITIES
 
 END MODULE timecycle

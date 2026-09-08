@@ -61,7 +61,7 @@ $(BUILDDIR)pantera.o: $(SRCDIR)pantera.f90  $(OBJS) createbuilddir
 $(BUILDDIR)global.o: $(SRCDIR)global.f90  $(BUILDDIR)mpi_common.o  $(BUILDDIR)particle.o  createbuilddir
 	$(CMP) $(OPTF) -o $@ -J$(BUILDDIR) $(SRCDIR)global.f90
 
-$(BUILDDIR)timecycle.o: $(SRCDIR)timecycle.f90  $(BUILDDIR)global.o  $(BUILDDIR)particle.o  $(BUILDDIR)screen.o  $(BUILDDIR)velocity_distribution.o  $(BUILDDIR)collisions.o  $(BUILDDIR)postprocess.o  $(BUILDDIR)fields.o  $(BUILDDIR)washboard.o  createbuilddir
+$(BUILDDIR)timecycle.o: $(SRCDIR)timecycle.f90  $(BUILDDIR)global.o  $(BUILDDIR)particle.o  $(BUILDDIR)screen.o  $(BUILDDIR)velocity_distribution.o  $(BUILDDIR)collisions.o  $(BUILDDIR)postprocess.o  $(BUILDDIR)fields.o  $(BUILDDIR)washboard.o  $(BUILDDIR)initialization.o  createbuilddir
 	$(CMP) $(OPTF) -o $@ -J$(BUILDDIR) $(SRCDIR)timecycle.f90
 
 $(BUILDDIR)initialization.o: $(SRCDIR)initialization.f90  $(BUILDDIR)global.o  $(BUILDDIR)velocity_distribution.o  $(BUILDDIR)tools.o  $(BUILDDIR)grid_and_partition.o  createbuilddir

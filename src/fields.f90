@@ -524,15 +524,7 @@ MODULE fields
                ELSE
                   EPS_REL = GRID_BC(U3D_GRID%CELL_PG(I))%EPS_REL
                END IF
-
-               IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
-                  VOLUME = U1D_GRID%CELL_VOLUMES(I)
-               ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
-                  VOLUME = U2D_GRID%CELL_VOLUMES(I)
-               ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
-                  VOLUME = U3D_GRID%CELL_VOLUMES(I)
-               END IF
-
+               VOLUME = U3D_GRID%CELL_VOLUMES(I)
                DO P = 1, 4
 
                   VP = U3D_GRID%CELL_NODES(P,I) - 1
@@ -1791,7 +1783,7 @@ MODULE fields
       REAL(KIND=8) :: X1, X2, X3, Y1, Y2, Y3, K11, K22, K33, K12, K23, K13, AREA
       INTEGER :: V1, V2, V3, I
       INTEGER :: P, Q, VP, VQ
-      REAL(KIND=8) :: KPQ, VOLUME, LENGTH
+      REAL(KIND=8) :: KPQ, VOLUME, LENGTH, EPS_REL
 
       TYPE(PARTICLE_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: part_adv
 
@@ -1821,20 +1813,30 @@ MODULE fields
 
       IF (DIMS == 1) THEN
          DO I = 1, NCELLS
+            IF (U1D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U1D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             LENGTH = U1D_GRID%SEGMENT_LENGTHS(I)
             V1 = U1D_GRID%CELL_NODES(1,I)
             V2 = U1D_GRID%CELL_NODES(2,I)
 
 
-            K11 = 1.0/LENGTH
-            K22 = 1.0/LENGTH
-            K12 =-1.0/LENGTH
+            K11 = 1.0/LENGTH*EPS_REL
+            K22 = 1.0/LENGTH*EPS_REL
+            K12 =-1.0/LENGTH*EPS_REL
 
             RHS_NEW(V1-1) = RHS_NEW(V1-1) + K11*PHI_FIELD_NEW(V1) + K12*PHI_FIELD_NEW(V2)
             RHS_NEW(V2-1) = RHS_NEW(V2-1) + K12*PHI_FIELD_NEW(V1) + K22*PHI_FIELD_NEW(V2)
          END DO
       ELSE IF (DIMS == 2) THEN
          DO I = 1, NCELLS
+            IF (U2D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U2D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             AREA = U2D_GRID%CELL_AREAS(I)
             V1 = U2D_GRID%CELL_NODES(1,I)
             V2 = U2D_GRID%CELL_NODES(2,I)
@@ -1845,12 +1847,12 @@ MODULE fields
             Y1 = U2D_GRID%NODE_COORDS(2, V1)
             Y2 = U2D_GRID%NODE_COORDS(2, V2)
             Y3 = U2D_GRID%NODE_COORDS(2, V3)
-            K11 = 0.25*((Y2-Y3)**2 + (X2-X3)**2)/AREA
-            K22 = 0.25*((Y1-Y3)**2 + (X1-X3)**2)/AREA
-            K33 = 0.25*((Y2-Y1)**2 + (X2-X1)**2)/AREA
-            K12 =-0.25*((Y2-Y3)*(Y1-Y3) + (X2-X3)*(X1-X3))/AREA
-            K23 = 0.25*((Y1-Y3)*(Y2-Y1) + (X1-X3)*(X2-X1))/AREA
-            K13 =-0.25*((Y2-Y3)*(Y2-Y1) + (X2-X3)*(X2-X1))/AREA
+            K11 = 0.25*((Y2-Y3)**2 + (X2-X3)**2)/AREA*EPS_REL
+            K22 = 0.25*((Y1-Y3)**2 + (X1-X3)**2)/AREA*EPS_REL
+            K33 = 0.25*((Y2-Y1)**2 + (X2-X1)**2)/AREA*EPS_REL
+            K12 =-0.25*((Y2-Y3)*(Y1-Y3) + (X2-X3)*(X1-X3))/AREA*EPS_REL
+            K23 = 0.25*((Y1-Y3)*(Y2-Y1) + (X1-X3)*(X2-X1))/AREA*EPS_REL
+            K13 =-0.25*((Y2-Y3)*(Y2-Y1) + (X2-X3)*(X2-X1))/AREA*EPS_REL
             IF (AXI) THEN
                K11 = K11*(Y1+Y2+Y3)/3.
                K22 = K22*(Y1+Y2+Y3)/3.
@@ -1866,6 +1868,11 @@ MODULE fields
          END DO
       ELSE IF (DIMS == 3) THEN
          DO I = 1, NCELLS
+            IF (U3D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U3D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             VOLUME = U3D_GRID%CELL_VOLUMES(I)
             DO P = 1, 4
                VP = U3D_GRID%CELL_NODES(P,I)
@@ -1873,7 +1880,7 @@ MODULE fields
                   VQ = U3D_GRID%CELL_NODES(Q,I)
                   KPQ = VOLUME*(U3D_GRID%BASIS_COEFFS(1,P,I)*U3D_GRID%BASIS_COEFFS(1,Q,I) &
                               + U3D_GRID%BASIS_COEFFS(2,P,I)*U3D_GRID%BASIS_COEFFS(2,Q,I) &
-                              + U3D_GRID%BASIS_COEFFS(3,P,I)*U3D_GRID%BASIS_COEFFS(3,Q,I))
+                              + U3D_GRID%BASIS_COEFFS(3,P,I)*U3D_GRID%BASIS_COEFFS(3,Q,I)) * EPS_REL
                   RHS_NEW(VQ-1) = RHS_NEW(VQ-1) + KPQ*PHI_FIELD_NEW(VP)
                END DO
             END DO
@@ -1945,7 +1952,7 @@ MODULE fields
       REAL(KIND=8) :: AREA
       INTEGER :: V1, V2, V3
       INTEGER :: P, Q, VP, VQ
-      REAL(KIND=8) :: KPQ, VOLUME, VALUETOADD, LENGTH
+      REAL(KIND=8) :: KPQ, VOLUME, VALUETOADD, LENGTH, EPS_REL
       TYPE(PARTICLE_DATA_STRUCTURE), DIMENSION(:), ALLOCATABLE :: part_adv
       REAL(KIND=8) :: MPQ, FACTOR1, FACTOR2, ME
       INTEGER :: ELECTRON_S_ID
@@ -2144,6 +2151,11 @@ MODULE fields
       ! Accumulate Jacobian. All this is in principle not needed since we already have Amat.
       IF (DIMS == 1) THEN
          DO I = 1, NCELLS
+            IF (U1D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U1D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             LENGTH = U1D_GRID%SEGMENT_LENGTHS(I)
             
             ! We need to ADD to a sparse matrix entry.
@@ -2153,7 +2165,7 @@ MODULE fields
                   IF (.NOT. IS_DIRICHLET(VP-1)) THEN
                      DO Q = 1, 2
                         VQ = U1D_GRID%CELL_NODES(Q,I)
-                        KPQ = LENGTH*(U2D_GRID%BASIS_COEFFS(1,P,I)*U2D_GRID%BASIS_COEFFS(1,Q,I))
+                        KPQ = LENGTH*(U2D_GRID%BASIS_COEFFS(1,P,I)*U2D_GRID%BASIS_COEFFS(1,Q,I))*EPS_REL
 
                         IF (JACOBIAN_TYPE == 3 .OR. JACOBIAN_TYPE == 4) THEN
                            KPQ = KPQ * (MASS_MATRIX(I)+1)
@@ -2168,6 +2180,11 @@ MODULE fields
          END DO
       ELSE IF (DIMS == 2) THEN
          DO I = 1, NCELLS
+            IF (U2D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U2D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             AREA = U2D_GRID%CELL_AREAS(I)
             
             ! We need to ADD to a sparse matrix entry.
@@ -2178,7 +2195,7 @@ MODULE fields
                      DO Q = 1, 3
                         VQ = U2D_GRID%CELL_NODES(Q,I)
                         KPQ = AREA*(U2D_GRID%BASIS_COEFFS(1,P,I)*U2D_GRID%BASIS_COEFFS(1,Q,I) &
-                                  + U2D_GRID%BASIS_COEFFS(2,P,I)*U2D_GRID%BASIS_COEFFS(2,Q,I))
+                                  + U2D_GRID%BASIS_COEFFS(2,P,I)*U2D_GRID%BASIS_COEFFS(2,Q,I))*EPS_REL
                         
                         IF (AXI) THEN
                            V1 = U2D_GRID%CELL_NODES(1,I)
@@ -2202,6 +2219,11 @@ MODULE fields
          END DO
       ELSE IF (DIMS == 3) THEN
          DO I = 1, NCELLS
+            IF (U3D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U3D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             VOLUME = U3D_GRID%CELL_VOLUMES(I)
             
             ! We need to ADD to a sparse matrix entry.
@@ -2213,7 +2235,7 @@ MODULE fields
                         VQ = U3D_GRID%CELL_NODES(Q,I)
                         KPQ = VOLUME*(U3D_GRID%BASIS_COEFFS(1,P,I)*U3D_GRID%BASIS_COEFFS(1,Q,I) &
                                     + U3D_GRID%BASIS_COEFFS(2,P,I)*U3D_GRID%BASIS_COEFFS(2,Q,I) &
-                                    + U3D_GRID%BASIS_COEFFS(3,P,I)*U3D_GRID%BASIS_COEFFS(3,Q,I))
+                                    + U3D_GRID%BASIS_COEFFS(3,P,I)*U3D_GRID%BASIS_COEFFS(3,Q,I))*EPS_REL
 
                         IF (JACOBIAN_TYPE == 3 .OR. JACOBIAN_TYPE == 4) THEN
                            KPQ = KPQ * (MASS_MATRIX(I)+1)
@@ -2299,7 +2321,7 @@ MODULE fields
       REAL(KIND=8) :: X1, X2, X3, Y1, Y2, Y3, K11, K22, K33, K12, K23, K13, AREA
       INTEGER :: V1, V2, V3, I
       INTEGER :: P, Q, VP, VQ
-      REAL(KIND=8) :: KPQ, VOLUME, LENGTH
+      REAL(KIND=8) :: KPQ, VOLUME, LENGTH, EPS_REL
       REAL(KIND=8) :: MPQ, FACTOR1, FACTOR2, ME
       INTEGER :: ELECTRON_S_ID
 
@@ -2342,20 +2364,30 @@ MODULE fields
 
       IF (DIMS == 1) THEN
          DO I = 1, NCELLS
+            IF (U1D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U1D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             LENGTH = U1D_GRID%SEGMENT_LENGTHS(I)
             V1 = U1D_GRID%CELL_NODES(1,I)
             V2 = U1D_GRID%CELL_NODES(2,I)
 
 
-            K11 = 1.0/LENGTH
-            K22 = 1.0/LENGTH
-            K12 =-1.0/LENGTH
+            K11 = 1.0/LENGTH*EPS_REL
+            K22 = 1.0/LENGTH*EPS_REL
+            K12 =-1.0/LENGTH*EPS_REL
 
             RHS_NEW(V1-1) = RHS_NEW(V1-1) + K11*PHI_FIELD_NEW(V1) + K12*PHI_FIELD_NEW(V2)
             RHS_NEW(V2-1) = RHS_NEW(V2-1) + K12*PHI_FIELD_NEW(V1) + K22*PHI_FIELD_NEW(V2)
          END DO
       ELSE IF (DIMS == 2) THEN
          DO I = 1, NCELLS
+            IF (U2D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U2D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             AREA = U2D_GRID%CELL_AREAS(I)
             V1 = U2D_GRID%CELL_NODES(1,I)
             V2 = U2D_GRID%CELL_NODES(2,I)
@@ -2366,12 +2398,12 @@ MODULE fields
             Y1 = U2D_GRID%NODE_COORDS(2, V1)
             Y2 = U2D_GRID%NODE_COORDS(2, V2)
             Y3 = U2D_GRID%NODE_COORDS(2, V3)
-            K11 = 0.25*((Y2-Y3)**2 + (X2-X3)**2)/AREA
-            K22 = 0.25*((Y1-Y3)**2 + (X1-X3)**2)/AREA
-            K33 = 0.25*((Y2-Y1)**2 + (X2-X1)**2)/AREA
-            K12 =-0.25*((Y2-Y3)*(Y1-Y3) + (X2-X3)*(X1-X3))/AREA
-            K23 = 0.25*((Y1-Y3)*(Y2-Y1) + (X1-X3)*(X2-X1))/AREA
-            K13 =-0.25*((Y2-Y3)*(Y2-Y1) + (X2-X3)*(X2-X1))/AREA
+            K11 = 0.25*((Y2-Y3)**2 + (X2-X3)**2)/AREA*EPS_REL
+            K22 = 0.25*((Y1-Y3)**2 + (X1-X3)**2)/AREA*EPS_REL
+            K33 = 0.25*((Y2-Y1)**2 + (X2-X1)**2)/AREA*EPS_REL
+            K12 =-0.25*((Y2-Y3)*(Y1-Y3) + (X2-X3)*(X1-X3))/AREA*EPS_REL
+            K23 = 0.25*((Y1-Y3)*(Y2-Y1) + (X1-X3)*(X2-X1))/AREA*EPS_REL
+            K13 =-0.25*((Y2-Y3)*(Y2-Y1) + (X2-X3)*(X2-X1))/AREA*EPS_REL
             IF (AXI) THEN
                K11 = K11*(Y1+Y2+Y3)/3.
                K22 = K22*(Y1+Y2+Y3)/3.
@@ -2387,6 +2419,11 @@ MODULE fields
          END DO
       ELSE IF (DIMS == 3) THEN
          DO I = 1, NCELLS
+            IF (U3D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U3D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             VOLUME = U3D_GRID%CELL_VOLUMES(I)
             DO P = 1, 4
                VP = U3D_GRID%CELL_NODES(P,I)
@@ -2394,7 +2431,7 @@ MODULE fields
                   VQ = U3D_GRID%CELL_NODES(Q,I)
                   KPQ = VOLUME*(U3D_GRID%BASIS_COEFFS(1,P,I)*U3D_GRID%BASIS_COEFFS(1,Q,I) &
                               + U3D_GRID%BASIS_COEFFS(2,P,I)*U3D_GRID%BASIS_COEFFS(2,Q,I) &
-                              + U3D_GRID%BASIS_COEFFS(3,P,I)*U3D_GRID%BASIS_COEFFS(3,Q,I))
+                              + U3D_GRID%BASIS_COEFFS(3,P,I)*U3D_GRID%BASIS_COEFFS(3,Q,I)) * EPS_REL
                   RHS_NEW(VQ-1) = RHS_NEW(VQ-1) + KPQ*PHI_FIELD_NEW(VP)
                END DO
             END DO
@@ -2536,6 +2573,11 @@ MODULE fields
 
       IF (DIMS == 1) THEN
          DO I = 1, NCELLS
+            IF (U1D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U1D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             LENGTH = U1D_GRID%SEGMENT_LENGTHS(I)
             
             ! We need to ADD to a sparse matrix entry.
@@ -2545,7 +2587,7 @@ MODULE fields
                   IF (.NOT. IS_DIRICHLET(VP-1)) THEN
                      DO Q = 1, 2
                         VQ = U1D_GRID%CELL_NODES(Q,I)
-                        KPQ = LENGTH*(U2D_GRID%BASIS_COEFFS(1,P,I)*U2D_GRID%BASIS_COEFFS(1,Q,I))
+                        KPQ = LENGTH*(U2D_GRID%BASIS_COEFFS(1,P,I)*U2D_GRID%BASIS_COEFFS(1,Q,I))*EPS_REL
 
                         IF (JACOBIAN_TYPE == 3 .OR. JACOBIAN_TYPE == 4) THEN
                            KPQ = KPQ * (MASS_MATRIX(I)+1)
@@ -2560,6 +2602,11 @@ MODULE fields
          END DO
       ELSE IF (DIMS == 2) THEN
          DO I = 1, NCELLS
+            IF (U2D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U2D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             AREA = U2D_GRID%CELL_AREAS(I)
             
             ! We need to ADD to a sparse matrix entry.
@@ -2570,7 +2617,7 @@ MODULE fields
                      DO Q = 1, 3
                         VQ = U2D_GRID%CELL_NODES(Q,I)
                         KPQ = AREA*(U2D_GRID%BASIS_COEFFS(1,P,I)*U2D_GRID%BASIS_COEFFS(1,Q,I) &
-                                  + U2D_GRID%BASIS_COEFFS(2,P,I)*U2D_GRID%BASIS_COEFFS(2,Q,I))
+                                  + U2D_GRID%BASIS_COEFFS(2,P,I)*U2D_GRID%BASIS_COEFFS(2,Q,I))*EPS_REL
                         
                         IF (AXI) THEN
                            V1 = U2D_GRID%CELL_NODES(1,I)
@@ -2594,6 +2641,11 @@ MODULE fields
          END DO
       ELSE IF (DIMS == 3) THEN
          DO I = 1, NCELLS
+            IF (U3D_GRID%CELL_PG(I) == -1) THEN
+               EPS_REL = 1.d0
+            ELSE
+               EPS_REL = GRID_BC(U3D_GRID%CELL_PG(I))%EPS_REL
+            END IF
             VOLUME = U3D_GRID%CELL_VOLUMES(I)
             
             ! We need to ADD to a sparse matrix entry.
@@ -2605,7 +2657,7 @@ MODULE fields
                         VQ = U3D_GRID%CELL_NODES(Q,I)
                         KPQ = VOLUME*(U3D_GRID%BASIS_COEFFS(1,P,I)*U3D_GRID%BASIS_COEFFS(1,Q,I) &
                                     + U3D_GRID%BASIS_COEFFS(2,P,I)*U3D_GRID%BASIS_COEFFS(2,Q,I) &
-                                    + U3D_GRID%BASIS_COEFFS(3,P,I)*U3D_GRID%BASIS_COEFFS(3,Q,I))
+                                    + U3D_GRID%BASIS_COEFFS(3,P,I)*U3D_GRID%BASIS_COEFFS(3,Q,I))*EPS_REL
                         
                         IF (JACOBIAN_TYPE == 3 .OR. JACOBIAN_TYPE == 4) THEN
                            KPQ = KPQ * (MASS_MATRIX(I)+1)
@@ -3021,6 +3073,7 @@ MODULE fields
       LOCAL_WALL_COLL_COUNT = 0
 
       FIELD_POWER = 0
+      ELEC_ENERGY = 0.d0
 
       ALLOCATE(SURFACE_CHARGE_STEP(NNODES))
       SURFACE_CHARGE_STEP = 0.d0
@@ -3031,6 +3084,12 @@ MODULE fields
          NCROSSINGS = 0
          REMOVE_PART(IP) = .FALSE.
          IC = part_adv(IP)%IC
+
+         ! DBDB Energy check
+         IF (part_adv(IP)%S_ID == 7 .AND. FINAL) THEN
+            ELEC_ENERGY = ELEC_ENERGY - 0.5*SPECIES(7)%MOLECULAR_MASS*FNUM*SPWT*&
+            (part_adv(IP)%VX**2 + part_adv(IP)%VY**2 + part_adv(IP)%VZ**2)
+         END IF
 
          IF (COMPUTE_JACOBIAN .AND. JACOBIAN_TYPE == 1) THEN
             DVXDEX = 0.d0
@@ -3785,6 +3844,12 @@ MODULE fields
                   CALL MOVE_PARTICLE_CN(part_adv, IP, E, part_adv(IP)%DTRIM)
                   IF (AXI .AND. DIMS == 2) CALL AXI_ROTATE_VELOCITY(part_adv, IP)
                   part_adv(IP)%DTRIM = 0.d0
+
+                  ! DBDB Energy check
+                  IF (part_adv(IP)%S_ID == 7 .AND. FINAL) THEN
+                     ELEC_ENERGY = ELEC_ENERGY + 0.5*SPECIES(7)%MOLECULAR_MASS*FNUM*SPWT*&
+                     (part_adv(IP)%VX**2 + part_adv(IP)%VY**2 + part_adv(IP)%VZ**2)
+                  END IF
                END IF
             
             ELSE
@@ -7119,11 +7184,11 @@ MODULE fields
       IMPLICIT NONE
 
       REAL(KIND=8) :: EDOTN, EPS_REL
-      INTEGER :: IC, IP, FACE_PG, VOL_PG
+      INTEGER :: IC, IP, FACE_PG, VOL_PG, IPG
 
 
-      DO FACE_PG = 1, N_GRID_BC
-         GRID_BC(FACE_PG)%EDOTA = 0.d0
+      DO IPG = 1, N_GRID_BC
+         GRID_BC(IPG)%EDOTA = 0.d0
       END DO
 
       IF (DIMS == 2) THEN
@@ -7152,11 +7217,11 @@ MODULE fields
          END DO
       END IF
 
-      DO FACE_PG = 1, N_GRID_BC
-         GRID_BC(FACE_PG)%DISPLACEMENT_CURRENT = (GRID_BC(FACE_PG)%EDOTA - GRID_BC(FACE_PG)%LAST_EDOTA)/DT
-         GRID_BC(FACE_PG)%LAST_EDOTA = GRID_BC(FACE_PG)%EDOTA
+      DO IPG = 1, N_GRID_BC
+         GRID_BC(IPG)%DISPLACEMENT_CURRENT = (GRID_BC(IPG)%EDOTA - GRID_BC(IPG)%LAST_EDOTA)/DT
+         GRID_BC(IPG)%LAST_EDOTA = GRID_BC(IPG)%EDOTA
       END DO
 
-   END SUBROUTINE
+   END SUBROUTINE COMPUTE_DISPLACEMENT_CURRENT
 
 END MODULE fields
