@@ -1175,10 +1175,12 @@ MODULE grid_and_partition
       INTEGER, DIMENSION(3) :: VLIST3
 
       INTEGER, DIMENSION(:), ALLOCATABLE :: N_CELLS_WITH_NODE, CELL_WITH_NODE, IOF
-      INTEGER :: IDX, JN, JC1, JC2
+      INTEGER :: IDX, IN, JN, JC1, JC2, IC, JC
 
       LOGICAL, DIMENSION(:), ALLOCATABLE :: NODE_ON_BOUNDARY
       INTEGER :: NUM_BOUNDARY_NODES, NUM_BOUNDARY_ELEM
+
+      LOGICAL :: SKIP
 
       ! Open input file for reading
       OPEN(UNIT=in5,FILE=FILENAME, STATUS='old',IOSTAT=ios)
@@ -1483,6 +1485,29 @@ MODULE grid_and_partition
       U2D_GRID%CELL_NEIGHBORS = TEMP_CELL_NEIGHBORS
 
 
+      ! Find surrounding cells for cloud charge deposition (only first layer).
+      ALLOCATE(U2D_GRID%CELL_SURROUNDING(20, U2D_GRID%NUM_CELLS))
+      ALLOCATE(U2D_GRID%N_CELL_SURROUNDING(U2D_GRID%NUM_CELLS))
+      DO IC = 1, U2D_GRID%NUM_CELLS
+         U2D_GRID%N_CELL_SURROUNDING(IC) = 1
+         U2D_GRID%CELL_SURROUNDING(1, IC) = IC
+         DO JN = 1, 3
+            IN = U2D_GRID%CELL_NODES(JN, IC)
+            IF (N_CELLS_WITH_NODE(IN) > 1) THEN
+               DO I = 1, N_CELLS_WITH_NODE(IN)
+                  JC = CELL_WITH_NODE(IOF(IN) + I - 1)
+                  IF (JC == -1) CYCLE ! or if not in fluid domain?
+                  SKIP = .FALSE.
+                  DO J = 1, U2D_GRID%N_CELL_SURROUNDING(IC)
+                     IF (U2D_GRID%CELL_SURROUNDING(J, IC) == JC) SKIP = .TRUE.
+                  END DO
+                  IF (SKIP) CYCLE
+                  U2D_GRID%N_CELL_SURROUNDING(IC) = U2D_GRID%N_CELL_SURROUNDING(IC) + 1
+                  U2D_GRID%CELL_SURROUNDING(U2D_GRID%N_CELL_SURROUNDING(IC), IC) = JC
+               END DO
+            END IF
+         END DO
+      END DO
 
       !WRITE(*,*) 'Generated grid connectivity. '
       !DO I = 1, U2D_GRID%NUM_CELLS

@@ -1882,6 +1882,8 @@ MODULE postprocess
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: TOT_EE_PART, TOT_KE_PART, ALL_DISPCURR, ALL_VOLTAGES
 
       REAL(KIND=8), ALLOCATABLE, DIMENSION(:,:) :: TOT_MOMENTUM
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: SPWEIGHTS
+
       REAL(KIND=8)                       :: TOT_KE, TOT_IE, TOT_FE, TOT_EE_FIELD, PHI, CURRENT_TIME, FIELD_POWER_TOT
       REAL(KIND=8)                       :: CFNUM, VOL, SPWT
 
@@ -1894,6 +1896,7 @@ MODULE postprocess
       ALLOCATE(TOT_KE_PART(N_SPECIES))
       ALLOCATE(TOT_MOMENTUM(3,N_SPECIES))
       ALLOCATE(TOT_REACT_COUNTS(N_REACTIONS))
+      ALLOCATE(SPWEIGHTS(N_SPECIES))
 
       TOT_NUM = 0
       TOT_MOMENTUM = 0
@@ -1945,6 +1948,10 @@ MODULE postprocess
 
       DO JR = 1, N_REACTIONS
          TOT_REACT_COUNTS(JR) = TOT_REACT_COUNTS(JR) + REACTIONS(JR)%COUNTS
+      END DO
+
+      DO JS = 1, N_SPECIES
+         SPWEIGHTS(JS) = SPECIES(JS)%SPWT
       END DO
 
       ! Collect data from all the processes and print it
@@ -2012,6 +2019,9 @@ MODULE postprocess
                HEADER_STRING = TRIM(HEADER_STRING) // ' npart_' // TRIM(SPECIES(JS)%NAME)
             END DO
             DO JS = 1, N_SPECIES
+               HEADER_STRING = TRIM(HEADER_STRING) // ' weight_' // TRIM(SPECIES(JS)%NAME)
+            END DO
+            DO JS = 1, N_SPECIES
                HEADER_STRING = TRIM(HEADER_STRING) // ' xmom_' // TRIM(SPECIES(JS)%NAME) // ' ' &
                                              // 'ymom_' // TRIM(SPECIES(JS)%NAME) // ' ' &
                                              // 'zmom_' // TRIM(SPECIES(JS)%NAME)
@@ -2040,7 +2050,7 @@ MODULE postprocess
             WRITE(54331,*) TRIM(HEADER_STRING)
          END IF
 
-         WRITE(54331,*) CURRENT_TIME, TOT_NUM, TOT_MOMENTUM, SUM(TOT_MOMENTUM, DIM=2), &
+         WRITE(54331,*) CURRENT_TIME, TOT_NUM, SPWEIGHTS, TOT_MOMENTUM, SUM(TOT_MOMENTUM, DIM=2), &
          TOT_KE_PART, TOT_IE, TOT_EE_PART,TOT_EE_FIELD, &
          SUM(TOT_KE_PART) + TOT_IE + TOT_EE_FIELD, &
          FIELD_POWER_TOT, COIL_CURRENT, TOT_REACT_COUNTS, & !TOT_FE, TOT_EE
@@ -2063,6 +2073,13 @@ MODULE postprocess
 
          !CALL MPI_REDUCE(TOT_FE,        TOT_FE,       1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
       END IF
+
+      DEALLOCATE(TOT_NUM)
+      DEALLOCATE(TOT_EE_PART)
+      DEALLOCATE(TOT_KE_PART)
+      DEALLOCATE(TOT_MOMENTUM)
+      DEALLOCATE(TOT_REACT_COUNTS)
+      DEALLOCATE(SPWEIGHTS)
 
    END SUBROUTINE CHECKS
 

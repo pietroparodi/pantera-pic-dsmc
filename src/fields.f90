@@ -3183,7 +3183,8 @@ MODULE fields
             DTCOLL = part_adv(IP)%DTRIM ! Looking for collisions within the remaining time
             ! ______ ADVECTION ______
             IF (PIC_TYPE .NE. NONE) THEN
-               E = EBAR_FIELD(:, 1, IC) ! CALL APPLY_E_FIELD(IP, E)
+               !E = EBAR_FIELD(:, 1, IC) 
+               CALL APPLY_E_FIELD(IP, E)
             ELSE
                E = 0.d0
             END IF
@@ -4320,21 +4321,66 @@ MODULE fields
    END SUBROUTINE AXI_ROTATE_VELOCITY
  
 
+   FUNCTION PARTICLE_RADIUS(XP, YP) RESULT(RADIUS)
+      
+      IMPLICIT NONE
+
+      REAL(KIND=8), INTENT(IN) :: XP, YP
+      REAL(KIND=8) :: RADIUS
+
+      RADIUS = MAX(0.d0, MIN(0.01699-SQRT(XP*XP + YP*YP), 5.d-4))
+
+   END FUNCTION PARTICLE_RADIUS
+
+
    SUBROUTINE APPLY_E_FIELD(JP, E)
 
       IMPLICIT NONE
 
       REAL(KIND=8), DIMENSION(3), INTENT(OUT) :: E
       INTEGER, INTENT(IN) :: JP
-      REAL(KIND=8), DIMENSION(4) :: WEIGHTS
+      REAL(KIND=8), DIMENSION(4) :: WEIGHTS, PSIPS
       INTEGER, DIMENSION(4) :: INDICES, INDI, INDJ
+      INTEGER :: ICC, J, P, JPP
+      REAL(KIND=8) :: XPP, YPP, RADIUS
 
       IF (GRID_TYPE == UNSTRUCTURED) THEN
-         IF (PIC_TYPE == SEMIIMPLICIT .OR. PIC_TYPE == FULLYIMPLICIT) THEN
-            E = EBAR_FIELD(:, 1, particles(JP)%IC)
+         IF (USE_SUBPARTICLES) THEN
+            E = 0.d0
+            RADIUS = PARTICLE_RADIUS(particles(JP)%X, particles(JP)%Y)
+            ! For each subparticle
+            DO JPP = 1, N_SUBPARTICLES
+               XPP = particles(JP)%X + SUBP_X_OFFSETS_2D(JPP)*RADIUS
+               YPP = particles(JP)%Y + SUBP_Y_OFFSETS_2D(JPP)*RADIUS
+               ! For each element in the range
+               DO J = 1, U2D_GRID%N_CELL_SURROUNDING(particles(JP)%IC)
+
+                  ICC = U2D_GRID%CELL_SURROUNDING(J, particles(JP)%IC)
+                  DO P = 1, 3
+                     PSIPS(P) = U2D_GRID%BASIS_COEFFS(1,P,ICC)*XPP &
+                              + U2D_GRID%BASIS_COEFFS(2,P,ICC)*YPP &
+                              + U2D_GRID%BASIS_COEFFS(3,P,ICC)
+                  END DO
+                  IF (PSIPS(1) < 0. .OR. PSIPS(1) > 1.) CYCLE
+                  IF (PSIPS(2) < 0. .OR. PSIPS(2) > 1.) CYCLE
+                  IF (PSIPS(3) < 0. .OR. PSIPS(3) > 1.) CYCLE
+                  IF (PIC_TYPE == SEMIIMPLICIT .OR. PIC_TYPE == FULLYIMPLICIT) THEN
+                     E = E + EBAR_FIELD(:, 1, ICC)*SUBP_WEIGHTS_2D(JPP)
+                  ELSE
+                     E = E + E_FIELD(:, 1, ICC)*SUBP_WEIGHTS_2D(JPP)
+                  END IF
+                  EXIT
+               END DO
+            END DO
+            ! This works at radius 0.
          ELSE
-            E = E_FIELD(:, 1, particles(JP)%IC)
+            IF (PIC_TYPE == SEMIIMPLICIT .OR. PIC_TYPE == FULLYIMPLICIT) THEN
+               E = EBAR_FIELD(:, 1, particles(JP)%IC)
+            ELSE
+               E = E_FIELD(:, 1, particles(JP)%IC)
+            END IF
          END IF
+
       ELSE
 
          CALL COMPUTE_WEIGHTS(JP, WEIGHTS, INDICES, INDI, INDJ)
@@ -5710,12 +5756,18 @@ MODULE fields
       REAL(KIND=8) :: VOL, CFNUM, SPWT
       REAL(KIND=8), DIMENSION(4) :: WEIGHTS
       INTEGER, DIMENSION(4) :: INDICES, INDI, INDJ
-      INTEGER :: SIZE, P, VP
-      REAL(KIND=8) :: PSIP
+      INTEGER :: SIZE, P, VP, ICC, J, JPP
+      REAL(KIND=8) :: PSIP, RADIUS, XPP, YPP, TOTDEPOSITED, WEIGHT_RES
+      REAL(KIND=8), DIMENSION(4) :: PSIPS
+      REAL(KIND=8), ALLOCATABLE, DIMENSION(:) :: RHS_CHECK
 
       K = QE/(EPS0*EPS_SCALING**2) ! [V m] Elementary charge / Dielectric constant of vacuum
 
       RHS = 0.d0
+
+
+      IF (.NOT. ALLOCATED(RHS_CHECK)) ALLOCATE(RHS_CHECK(0:NNODES-1))
+      RHS_CHECK = 0.d0
 
       DO JP = 1, NP_PROC
          CHARGE = SPECIES(part_adv(JP)%S_ID)%CHARGE
@@ -5743,13 +5795,78 @@ MODULE fields
                END DO
             ELSE IF (DIMS == 2) THEN
                RHO_Q = K*CHARGE*FNUM*SPWT/(ZMAX-ZMIN)
-               DO P = 1, 3
-                  VP = U2D_GRID%CELL_NODES(P,IC) - 1
-                  PSIP = U2D_GRID%BASIS_COEFFS(1,P,IC)*part_adv(JP)%X &
-                       + U2D_GRID%BASIS_COEFFS(2,P,IC)*part_adv(JP)%Y &
-                       + U2D_GRID%BASIS_COEFFS(3,P,IC)
-                  RHS(VP) = RHS(VP) + RHO_Q*PSIP
-               END DO
+               IF (USE_SUBPARTICLES) THEN
+                  RADIUS = PARTICLE_RADIUS(part_adv(JP)%X, part_adv(JP)%Y)
+                  ! For each subparticle
+                  TOTDEPOSITED = 0.d0
+                  WEIGHT_RES = 1.d0
+                  DO JPP = 1, N_SUBPARTICLES
+                     XPP = part_adv(JP)%X + SUBP_X_OFFSETS_2D(JPP)*RADIUS
+                     YPP = part_adv(JP)%Y + SUBP_Y_OFFSETS_2D(JPP)*RADIUS
+                     ! For each element in the range
+                     DO J = 1, U2D_GRID%N_CELL_SURROUNDING(IC)
+                        ICC = U2D_GRID%CELL_SURROUNDING(J, IC)
+                        DO P = 1, 3
+                           PSIPS(P) = U2D_GRID%BASIS_COEFFS(1,P,ICC)*XPP &
+                                    + U2D_GRID%BASIS_COEFFS(2,P,ICC)*YPP &
+                                    + U2D_GRID%BASIS_COEFFS(3,P,ICC)
+                        END DO
+
+                        
+
+                        IF (PSIPS(1) < 0. .OR. PSIPS(1) > 1. .OR. &
+                            PSIPS(2) < 0. .OR. PSIPS(2) > 1. .OR. &
+                            PSIPS(3) < 0. .OR. PSIPS(3) > 1.) CYCLE
+                           !IF (JP == 5404) WRITE(*,*) 'Particle ', JP,&
+                           !' Cell ', IC, ' SubP ', JPP, ' CellSurr ', J,&
+                           ! Of ', U2D_GRID%N_CELL_SURROUNDING(IC), ' Index ', ICC, ' Psi ', PSIPS(1:3)
+
+
+                        !IF (J .NE. 1) CYCLE !WRITE(*,*) 'Particle ', JP, ' has a problem.', J, PSIPS(1:3), ICC
+                        !IF (U2D_GRID%CELL_PG(ICC) == -1) CYCLE
+                        !IF (GRID_BC(U2D_GRID%CELL_PG(ICC))%VOLUME_BC .NE. FLUID) CYCLE
+
+                        !IF (ICC .NE. IC) WRITE(*,*) IC, ICC
+                        WEIGHT_RES = WEIGHT_RES - SUBP_WEIGHTS_2D(JPP)
+
+                        DO P = 1, 3
+                           VP = U2D_GRID%CELL_NODES(P,ICC) - 1
+                           RHS(VP) = RHS(VP) + RHO_Q*PSIPS(P)*SUBP_WEIGHTS_2D(JPP)
+                           !IF (VP == 24 .AND. JPP == 1) THEN
+                           !   WRITE(*,*) 'New proc. part= ', JP, &
+                           !   ' Cell ', IC, ' SubP ', JPP, ' CellSurr ', J, &
+                           !   'Of ', U2D_GRID%N_CELL_SURROUNDING(IC), ' Index ', ICC, ' Psi ', PSIPS(1:3)
+                           !END IF
+                           TOTDEPOSITED = TOTDEPOSITED + PSIPS(P)*SUBP_WEIGHTS_2D(JPP)
+                        END DO
+
+                        !IF (ICC .NE. IC .AND. JPP == 1) WRITE(*,*) 'Particle ', JP, ' not in IC. Pos:', &
+                        !XPP, YPP, ' Cell surrounding ', J, PSIPS(1:3), ICC, &
+                        !U2D_GRID%CELL_NODES(1,ICC), U2D_GRID%CELL_NODES(2,ICC), U2D_GRID%CELL_NODES(3,ICC)
+
+                        EXIT ! Each subparticle is deposited in only one cell. Skip the check in other cells.
+                     END DO
+                  END DO
+                  ! Deposit the residual weight on the central node.
+                  ! This ensures that the entirety of the charge is always deposited.
+                  DO P = 1, 3
+                     VP = U2D_GRID%CELL_NODES(P,IC) - 1
+                     PSIP = U2D_GRID%BASIS_COEFFS(1,P,IC)*part_adv(JP)%X &
+                          + U2D_GRID%BASIS_COEFFS(2,P,IC)*part_adv(JP)%Y &
+                          + U2D_GRID%BASIS_COEFFS(3,P,IC)
+                     RHS(VP) = RHS(VP) + RHO_Q*PSIP*WEIGHT_RES
+                  END DO
+               ELSE
+                  DO P = 1, 3
+                     VP = U2D_GRID%CELL_NODES(P,IC) - 1
+                     PSIP = U2D_GRID%BASIS_COEFFS(1,P,IC)*part_adv(JP)%X &
+                        + U2D_GRID%BASIS_COEFFS(2,P,IC)*part_adv(JP)%Y &
+                        + U2D_GRID%BASIS_COEFFS(3,P,IC)
+                     RHS(VP) = RHS(VP) + RHO_Q*PSIP
+                  END DO
+               END IF
+
+
             ELSE IF (DIMS == 3) THEN
                RHO_Q = K*CHARGE*FNUM*SPWT
                DO P = 1, 4

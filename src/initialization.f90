@@ -203,6 +203,7 @@ MODULE initialization
                CALL ERROR_ABORT('PIC type is not specified correctly in input script.')
             END IF
          END IF
+         IF (line=='Use_subparticles:')        READ(in1,*) USE_SUBPARTICLES
          
          ! Fluid electrons setting
          IF (line=='Fluid_electrons:')         READ(in1,*) BOLTZ_N0, BOLTZ_PHI0, BOLTZ_TE

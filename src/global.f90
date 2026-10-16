@@ -166,6 +166,8 @@ MODULE global
       INTEGER, DIMENSION(:), ALLOCATABLE        :: PERIODIC_RELATED_NODE
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: CELL_VOLUMES
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: CELL_AREAS
+      INTEGER, DIMENSION(:,:), ALLOCATABLE      :: CELL_SURROUNDING
+      INTEGER, DIMENSION(:), ALLOCATABLE        :: N_CELL_SURROUNDING
    END TYPE UNSTRUCTURED_2D_GRID_DATA_STRUCTURE
 
    TYPE(UNSTRUCTURED_2D_GRID_DATA_STRUCTURE) :: U2D_GRID
@@ -426,6 +428,34 @@ MODULE global
    REAL(KIND=8) :: COLOCATED_ELECTRONS_TTRA = 11600.d0
    LOGICAL      :: RESIDUAL_AND_JACOBIAN_COMBINED = .FALSE.
    REAL(KIND=8) :: SNES_RTOL = 1.d-9
+
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!!!!!!!! Subparticles !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   LOGICAL :: USE_SUBPARTICLES = .FALSE.
+   INTEGER :: N_SUBPARTICLES = 25
+   REAL(KIND=8), DIMENSION(25) :: SUBP_X_OFFSETS_2D = &
+   [0., &
+    0.538, 0., -0.538, 0., &
+    0.498, -0.498, -0.498, 0.498, &
+    0.906, 0., -0.906, 0., &
+    0.874, 0.413, -0.413, -0.874, -0.874, -0.413, 0.413, 0.874, &
+    0.696, -0.696, -0.696, 0.696]
+   REAL(KIND=8), DIMENSION(25) :: SUBP_Y_OFFSETS_2D = &
+   [0., &
+    0., 0.538, 0., -0.538, &
+    0.498, 0.498, -0.498, -0.498, &
+    0., 0.906, 0., -0.906, &
+    0.413, 0.874, 0.874, 0.413, -0.413, -0.874, -0.874, -0.413, &
+    0.696, 0.696, -0.696, -0.696]
+   REAL(KIND=8), DIMENSION(25) :: SUBP_WEIGHTS_2D = &
+   [0.20640, &
+    0.11378, 0.11378, 0.11378, 0.11378, &
+    0.06104, 0.06104, 0.06104, 0.06104, &
+    0.01177, 0.01177, 0.01177, 0.01177, &
+    0.00573, 0.00573, 0.00573, 0.00573, 0.00573, 0.00573, 0.00573, 0.00573, &
+    0.00035, 0.00035, 0.00035, 0.00035]
 
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    !!!!!!!!! Collisions !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
