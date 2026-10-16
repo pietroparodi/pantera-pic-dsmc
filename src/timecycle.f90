@@ -92,14 +92,8 @@ MODULE timecycle
          IF (MOD(tID-DUMP_PART_START, DUMP_PART_EVERY) .EQ. 0) CALL DUMP_PARTICLES_FILE(tID)
       END IF
 
-      IF ((tID .GE. DUMP_GRID_START) .AND. (SAVE_INITIAL_TIMESTEP)) THEN
-         ! If we are in the grid save timestep, average, then dump the cumulated averages
-         IF (MOD(tID-DUMP_GRID_START, DUMP_GRID_AVG_EVERY*DUMP_GRID_N_AVG) .EQ. 0) THEN
-            CALL GRID_AVG
-            CALL GRID_SAVE
-            CALL GRID_RESET
-         END IF
-      END IF
+      CALL GRID_AVG
+      CALL GRID_SAVE
 
       IF ((tID .GE. DUMP_BOUND_START) .AND. (SAVE_INITIAL_TIMESTEP)) THEN
          ! If we are in the boundary save timestep, average, then dump the cumulated averages
@@ -349,17 +343,8 @@ MODULE timecycle
          END IF
 
          ! ########### Dump flowfield ##############################################
-         IF (tID .GT. DUMP_GRID_START) THEN
-            ! If we are in the grid save timestep, average, then dump the cumulated averages
-            IF (MOD(tID-DUMP_GRID_START, DUMP_GRID_AVG_EVERY*DUMP_GRID_N_AVG) .EQ. 0) THEN
-               CALL GRID_AVG
-               CALL GRID_SAVE
-               CALL GRID_RESET
-            ! If we are just in a grid average timestep, compute the grid average
-            ELSE IF (MOD(tID-DUMP_GRID_START, DUMP_GRID_AVG_EVERY) .EQ. 0) THEN
-               CALL GRID_AVG
-            END IF
-         END IF
+         CALL GRID_AVG
+         CALL GRID_SAVE
 
          ! ########### Dump boundary ##############################################
          IF (tID .GT. DUMP_BOUND_START) THEN

@@ -35,7 +35,7 @@ MODULE postprocess
 
       IMPLICIT NONE
 
-      INTEGER                            :: JP, JC, JS, INDEX
+      INTEGER                            :: JP, JC, JS, INDEX, ITASK
 
       REAL(KIND=8) :: DBLE_AVG_CUMULATED, NUMPART, SAMPLEDOF
       REAL(KIND=8) :: CX, CY, CZ, C2, MASS, VOL, CFNUM, SPWT
@@ -70,6 +70,20 @@ MODULE postprocess
       REAL(KIND=8), DIMENSION(:), ALLOCATABLE :: TIMESTEP_PHI
 
       INTEGER :: LENGTH
+
+      LOGICAL :: SKIP
+
+      ! If unnecessary, don't compute averages in this timestep.
+      SKIP = .TRUE.
+      DO ITASK = 1, N_GRID_AVG_TASKS
+         IF (((tID == GRID_AVG_TASKS(ITASK)%START) .AND. (GRID_AVG_TASKS(ITASK)%SAVE_INITIAL)) &
+         .OR. (tID .GT. GRID_AVG_TASKS(ITASK)%START)) THEN
+            IF (MOD(tID-GRID_AVG_TASKS(ITASK)%START, GRID_AVG_TASKS(ITASK)%EVERY) .EQ. 0) SKIP = .FALSE.
+         END IF
+      END DO
+      IF (SKIP) RETURN
+
+      ! We are in a grid average timestep.
 
       LENGTH = NCELLS * N_SPECIES
 
@@ -354,52 +368,75 @@ MODULE postprocess
 
       IF (PIC_TYPE .NE. NONE) TIMESTEP_PHI = PHI_FIELD
 
-      ! Add to cumulated average
-      DBLE_AVG_CUMULATED = DBLE(AVG_CUMULATED)
-      AVG_NP =   (AVG_NP*DBLE_AVG_CUMULATED + DBLE(TIMESTEP_NP))/(AVG_CUMULATED + 1.)
-      AVG_NREAL =   (AVG_NREAL*DBLE_AVG_CUMULATED + DBLE(TIMESTEP_NREAL))/(AVG_CUMULATED + 1.)
-
-      AVG_REACTIONS = (AVG_REACTIONS*DBLE_AVG_CUMULATED + DBLE(TIMESTEP_REACTIONS))/(AVG_CUMULATED + 1.)
-      
-      IF (PIC_TYPE .NE. NONE) AVG_PHI = (AVG_PHI*DBLE_AVG_CUMULATED + TIMESTEP_PHI)/(AVG_CUMULATED + 1.)
-
-      AVG_CUMULATED = AVG_CUMULATED + 1
-
-      DO INDEX = 1, NCELLS*N_SPECIES
-         IF (INTENSIVE_AVERAGE_ONE(INDEX)) THEN
-         AVG_VX(INDEX) = (AVG_VX(INDEX)*AVG_CUMULATED_INTENSIVE_ONE(INDEX) + TIMESTEP_VX(INDEX)) & 
-         /(AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
-         AVG_VY(INDEX) = (AVG_VY(INDEX)*AVG_CUMULATED_INTENSIVE_ONE(INDEX) + TIMESTEP_VY(INDEX)) & 
-         /(AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
-         AVG_VZ(INDEX) = (AVG_VZ(INDEX)*AVG_CUMULATED_INTENSIVE_ONE(INDEX) + TIMESTEP_VZ(INDEX)) & 
-         /(AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
-
-         AVG_TROT(INDEX) = (AVG_TROT(INDEX)*AVG_CUMULATED_INTENSIVE_ONE(INDEX) + TIMESTEP_TROT(INDEX)) & 
-         /(AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
-         AVG_TVIB(INDEX) = (AVG_TVIB(INDEX)*AVG_CUMULATED_INTENSIVE_ONE(INDEX) + TIMESTEP_TVIB(INDEX)) & 
-         /(AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
-
-         AVG_CUMULATED_INTENSIVE_ONE(INDEX) = AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1
+      ! Add to cumulated average on each average task.
+      DO ITASK = 1, N_GRID_AVG_TASKS
+         SKIP = .TRUE.
+         IF (((tID == GRID_AVG_TASKS(ITASK)%START) .AND. (GRID_AVG_TASKS(ITASK)%SAVE_INITIAL)) &
+         .OR. (tID .GT. GRID_AVG_TASKS(ITASK)%START)) THEN
+            IF (MOD(tID-GRID_AVG_TASKS(ITASK)%START, GRID_AVG_TASKS(ITASK)%EVERY) .EQ. 0) SKIP = .FALSE.
          END IF
-         IF (INTENSIVE_AVERAGE_TWO(INDEX)) THEN
-         AVG_TTRX(INDEX) = (AVG_TTRX(INDEX)*AVG_CUMULATED_INTENSIVE_TWO(INDEX) + TIMESTEP_TTRX(INDEX)) &
-         /(AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1.)
-         AVG_TTRY(INDEX) = (AVG_TTRY(INDEX)*AVG_CUMULATED_INTENSIVE_TWO(INDEX) + TIMESTEP_TTRY(INDEX)) &
-         /(AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1.)
-         AVG_TTRZ(INDEX) = (AVG_TTRZ(INDEX)*AVG_CUMULATED_INTENSIVE_TWO(INDEX) + TIMESTEP_TTRZ(INDEX)) &
-         /(AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1.)
+         IF (SKIP) CYCLE
 
-         IF (BOOL_DUMP_MOMENTS) THEN
-            AVG_MOMENTS(INDEX,:) = (AVG_MOMENTS(INDEX,:)*AVG_CUMULATED_INTENSIVE_TWO(INDEX) + TIMESTEP_MOMENTS(INDEX,:)) &
-            /(AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1.)
-         END IF
+         DBLE_AVG_CUMULATED = DBLE(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED)
 
-         AVG_CUMULATED_INTENSIVE_TWO(INDEX) = AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1
-         END IF
+         GRID_AVG_TASKS(ITASK)%AVG_NP =   (GRID_AVG_TASKS(ITASK)%AVG_NP*DBLE_AVG_CUMULATED + DBLE(TIMESTEP_NP)) &
+         /(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED + 1.)
+         GRID_AVG_TASKS(ITASK)%AVG_NREAL =   (GRID_AVG_TASKS(ITASK)%AVG_NREAL*DBLE_AVG_CUMULATED + DBLE(TIMESTEP_NREAL)) &
+         /(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED + 1.)
+
+         GRID_AVG_TASKS(ITASK)%AVG_REACTIONS = (GRID_AVG_TASKS(ITASK)%AVG_REACTIONS*DBLE_AVG_CUMULATED + DBLE(TIMESTEP_REACTIONS))&
+         /(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED + 1.)
+         
+         IF (PIC_TYPE .NE. NONE) GRID_AVG_TASKS(ITASK)%AVG_PHI = (GRID_AVG_TASKS(ITASK)%AVG_PHI*DBLE_AVG_CUMULATED + TIMESTEP_PHI)&
+         /(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED + 1.)
+
+         GRID_AVG_TASKS(ITASK)%AVG_CUMULATED = GRID_AVG_TASKS(ITASK)%AVG_CUMULATED + 1
+
+         DO INDEX = 1, NCELLS*N_SPECIES
+            IF (INTENSIVE_AVERAGE_ONE(INDEX)) THEN
+            GRID_AVG_TASKS(ITASK)%AVG_VX(INDEX) = (GRID_AVG_TASKS(ITASK)%AVG_VX(INDEX) &
+            *GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) + TIMESTEP_VX(INDEX)) & 
+            /(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
+            GRID_AVG_TASKS(ITASK)%AVG_VY(INDEX) = (GRID_AVG_TASKS(ITASK)%AVG_VY(INDEX)&
+            *GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) + TIMESTEP_VY(INDEX)) & 
+            /(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
+            GRID_AVG_TASKS(ITASK)%AVG_VZ(INDEX) = (GRID_AVG_TASKS(ITASK)%AVG_VZ(INDEX) &
+            *GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) + TIMESTEP_VZ(INDEX)) & 
+            /(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
+
+            GRID_AVG_TASKS(ITASK)%AVG_TROT(INDEX) = (GRID_AVG_TASKS(ITASK)%AVG_TROT(INDEX) &
+            *GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) &
+            + TIMESTEP_TROT(INDEX))/(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
+            GRID_AVG_TASKS(ITASK)%AVG_TVIB(INDEX) = (GRID_AVG_TASKS(ITASK)%AVG_TVIB(INDEX) &
+            *GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) &
+            + TIMESTEP_TVIB(INDEX))/(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1.)
+
+            GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) = GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(INDEX) + 1
+            END IF
+            IF (INTENSIVE_AVERAGE_TWO(INDEX)) THEN
+            GRID_AVG_TASKS(ITASK)%AVG_TTRX(INDEX) = (GRID_AVG_TASKS(ITASK)%AVG_TTRX(INDEX) &
+            *GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) &
+            + TIMESTEP_TTRX(INDEX))/(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1.)
+            GRID_AVG_TASKS(ITASK)%AVG_TTRY(INDEX) = (GRID_AVG_TASKS(ITASK)%AVG_TTRY(INDEX) &
+            *GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) &
+            + TIMESTEP_TTRY(INDEX))/(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1.)
+            GRID_AVG_TASKS(ITASK)%AVG_TTRZ(INDEX) = (GRID_AVG_TASKS(ITASK)%AVG_TTRZ(INDEX) &
+            *GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) &
+            + TIMESTEP_TTRZ(INDEX))/(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1.)
+
+            IF (BOOL_DUMP_MOMENTS) THEN
+               GRID_AVG_TASKS(ITASK)%AVG_MOMENTS(INDEX,:) = (GRID_AVG_TASKS(ITASK)%AVG_MOMENTS(INDEX,:) &
+               *GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) &
+               + TIMESTEP_MOMENTS(INDEX,:))/(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1.)
+            END IF
+
+            GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) = GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(INDEX) + 1
+            END IF
+         END DO
+
+         GRID_AVG_TASKS(ITASK)%AVG_TTR &
+         = (GRID_AVG_TASKS(ITASK)%AVG_TTRX + GRID_AVG_TASKS(ITASK)%AVG_TTRY + GRID_AVG_TASKS(ITASK)%AVG_TTRZ) / 3.0
       END DO
-
-      AVG_TTR = (AVG_TTRX + AVG_TTRY + AVG_TTRZ) / 3.0
-
 
 
          
@@ -462,674 +499,714 @@ MODULE postprocess
       REAL(KIND=8), DIMENSION(NY+1)      :: YNODES
       REAL(KIND=8), DIMENSION(NZ+1)      :: ZNODES
 
-      INTEGER                            :: I, JS, JR, FIRST, LAST, JPROC, MOM
+      INTEGER                            :: I, JS, JR, FIRST, LAST, JPROC, MOM, ITASK
 
       INTEGER, DIMENSION(:), ALLOCATABLE :: CELL_PROC_ID
 
       REAL(KIND=8) :: SPWT
       REAL(KIND=8) :: CURRENT_TIME
 
-      CURRENT_TIME = tID*DT
+      LOGICAL :: SKIP
 
-      MOMENT_STRING = ['rho_   ', &
-                        'Ux_    ', 'Uy_    ', 'Uz_    ', &
-                        'Pxx_   ', 'Pxy_   ', 'Pxz_   ', 'Pyy_   ', 'Pyz_   ', 'Pzz_   ', &
-                        'qx_    ', 'qy_    ', 'qz_    ', &
-                        'Qxxx_  ', 'Qxxy_  ', 'Qxyy_  ', 'Qyyy_  ', 'Qyyz_  ', &
-                        'Qyzz_  ', 'Qzzz_  ', 'Qxxz_  ', 'Qxzz_  ', 'Qxyz_  ', &
-                        'Riijj_ ', 'Rxxjj_ ', 'Rxyjj_ ', 'Rxzjj_ ', 'Ryyjj_ ', 'Ryzjj_ ', 'Rzzjj_ ', &
-                        'Sxiijj_', 'Syiijj_', 'Sziijj_']
+      ALLOCATE(CELL_PROC_ID(NCELLS))
+      DO I = 1, NCELLS
+         CALL PROC_FROM_CELL(i, JPROC)
+         CELL_PROC_ID(i) = JPROC
+      END DO
 
-      IF (PROC_ID .EQ. 0) THEN
-         IF (GRID_TYPE == RECTILINEAR_UNIFORM) THEN
-            XNODES = 0
-            DO I = 0, NX
-               XNODES(i+1) = XMIN + (XMAX-XMIN)/NX*I
-            END DO
+      DO ITASK = 1, N_GRID_AVG_TASKS
 
-            YNODES = 0
-            DO I = 0, NY
-               YNODES(i+1) = YMIN + (YMAX-YMIN)/NY*I
-            END DO
-
-            IF (DIMS == 0) THEN
-               ZNODES = 0
-               DO I = 0, NZ
-                  ZNODES(I+1) = ZMIN + (ZMAX-ZMIN)/NZ*I
-               END DO
-            END IF
-         ELSE IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
-            XNODES = XCOORD
-            YNODES = YCOORD
+         ! Check if we are in a grid save timestep, if yes dump the cumulated averages.
+         SKIP = .TRUE.
+         IF (((tID == GRID_AVG_TASKS(ITASK)%START) .AND. (GRID_AVG_TASKS(ITASK)%SAVE_INITIAL)) &
+         .OR. (tID .GT. GRID_AVG_TASKS(ITASK)%START)) THEN
+            IF (MOD(tID-GRID_AVG_TASKS(ITASK)%START, GRID_AVG_TASKS(ITASK)%EVERY*GRID_AVG_TASKS(ITASK)%N_AVG) .EQ. 0) SKIP = .FALSE.
          END IF
+         IF (SKIP) CYCLE
 
-         ALLOCATE(CELL_PROC_ID(NCELLS))
-         DO I = 1, NCELLS
-            CALL PROC_FROM_CELL(i, JPROC)
-            CELL_PROC_ID(i) = JPROC
-         END DO
+         WRITE(*,*) 'Saving'
 
-         ! Write to file.
+         CURRENT_TIME = tID*DT
 
-         !WRITE(file_name,'(A, I0, A)') '/media/pietro/Storage/panteradumps/dsmc_flowfield_', tID, '.vtk'
-         WRITE(file_name,'(A, A, I0, A)') TRIM(ADJUSTL(FLOWFIELD_SAVE_PATH)), 'dsmc_flowfield_', tID, '.vtk'
+         MOMENT_STRING = ['rho_   ', &
+                           'Ux_    ', 'Uy_    ', 'Uz_    ', &
+                           'Pxx_   ', 'Pxy_   ', 'Pxz_   ', 'Pyy_   ', 'Pyz_   ', 'Pzz_   ', &
+                           'qx_    ', 'qy_    ', 'qz_    ', &
+                           'Qxxx_  ', 'Qxxy_  ', 'Qxyy_  ', 'Qyyy_  ', 'Qyyz_  ', &
+                           'Qyzz_  ', 'Qzzz_  ', 'Qxxz_  ', 'Qxzz_  ', 'Qxyz_  ', &
+                           'Riijj_ ', 'Rxxjj_ ', 'Rxyjj_ ', 'Rxzjj_ ', 'Ryyjj_ ', 'Ryzjj_ ', 'Rzzjj_ ', &
+                           'Sxiijj_', 'Syiijj_', 'Sziijj_']
 
-         IF (BOOL_BINARY_OUTPUT) THEN
-            OPEN(54321, FILE=file_name, ACCESS='STREAM', FORM='UNFORMATTED', STATUS='NEW', CONVERT='BIG_ENDIAN')
-
-            WRITE(54321) '# vtk DataFile Version 3.0'//ACHAR(10)
-            WRITE(54321) 'vtk output'//ACHAR(10)
-            WRITE(54321) 'BINARY'//ACHAR(10)
-
-
-            IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
-               WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
-
-               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
-               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
-               WRITE(54321) CURRENT_TIME
-
-               WRITE(54321) 'POINTS '//ITOA(U1D_GRID%NUM_NODES)//' double'//ACHAR(10)
-               DO I = 1, U1D_GRID%NUM_NODES
-                  WRITE(54321) U1D_GRID%NODE_COORDS(:,I)
+         IF (PROC_ID .EQ. 0) THEN
+            IF (GRID_TYPE == RECTILINEAR_UNIFORM) THEN
+               XNODES = 0
+               DO I = 0, NX
+                  XNODES(i+1) = XMIN + (XMAX-XMIN)/NX*I
                END DO
 
-               WRITE(54321) 'CELLS '//ITOA(U1D_GRID%NUM_CELLS)//' '//ITOA(3*U1D_GRID%NUM_CELLS)//ACHAR(10)
-               DO I = 1, U1D_GRID%NUM_CELLS
-                  WRITE(54321) 2, (U1D_GRID%CELL_NODES(:,I) - 1)
+               YNODES = 0
+               DO I = 0, NY
+                  YNODES(i+1) = YMIN + (YMAX-YMIN)/NY*I
                END DO
 
-               WRITE(54321) 'CELL_TYPES '//ITOA(U1D_GRID%NUM_CELLS)//ACHAR(10)
-               DO I = 1, U1D_GRID%NUM_CELLS
-                  WRITE(54321) 3
-               END DO
-            ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
-               WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
-
-               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
-               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
-               WRITE(54321) CURRENT_TIME
-
-               WRITE(54321) 'POINTS '//ITOA(U2D_GRID%NUM_NODES)//' double'//ACHAR(10)
-               DO I = 1, U2D_GRID%NUM_NODES
-                  WRITE(54321) U2D_GRID%NODE_COORDS(:,I)
-               END DO
-
-               WRITE(54321) 'CELLS '//ITOA(U2D_GRID%NUM_CELLS)//' '//ITOA(4*U2D_GRID%NUM_CELLS)//ACHAR(10)
-               DO I = 1, U2D_GRID%NUM_CELLS
-                  WRITE(54321) 3, (U2D_GRID%CELL_NODES(:,I) - 1)
-               END DO
-
-               WRITE(54321) 'CELL_TYPES '//ITOA(U2D_GRID%NUM_CELLS)//ACHAR(10)
-               DO I = 1, U2D_GRID%NUM_CELLS
-                  WRITE(54321) 5
-               END DO
-            ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
-               WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
-
-               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
-               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
-               WRITE(54321) CURRENT_TIME
-
-               WRITE(54321) 'POINTS '//ITOA(U3D_GRID%NUM_NODES)//' double'//ACHAR(10)
-               DO I = 1, U3D_GRID%NUM_NODES
-                  WRITE(54321) U3D_GRID%NODE_COORDS(:,I)
-               END DO
-
-               WRITE(54321) 'CELLS '//ITOA(U3D_GRID%NUM_CELLS)//' '//ITOA(5*U3D_GRID%NUM_CELLS)//ACHAR(10)
-               DO I = 1, U3D_GRID%NUM_CELLS
-                  WRITE(54321) 4, (U3D_GRID%CELL_NODES(:,I) - 1)
-               END DO
-
-               WRITE(54321) 'CELL_TYPES '//ITOA(U3D_GRID%NUM_CELLS)//ACHAR(10)
-               DO I = 1, U3D_GRID%NUM_CELLS
-                  WRITE(54321) 10
-               END DO
-            ELSE IF (DIMS == 0) THEN
-               WRITE(54321) 'DATASET RECTILINEAR_GRID'//ACHAR(10)
-
-               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
-               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
-               WRITE(54321) CURRENT_TIME
-               
-               WRITE(54321) 'DIMENSIONS '//ITOA(NX+1)//' '//ITOA(NY+1)//' '//ITOA(NZ+1)//ACHAR(10)
-
-               WRITE(54321) 'X_COORDINATES '//ITOA(NX+1)//' double'//ACHAR(10)
-               WRITE(54321) XNODES, ACHAR(10)
-
-               WRITE(54321) 'Y_COORDINATES '//ITOA(NY+1)//' double'//ACHAR(10)
-               WRITE(54321) YNODES, ACHAR(10)
-
-               WRITE(54321) 'Z_COORDINATES '//ITOA(NZ+1)//' double'//ACHAR(10)
-               WRITE(54321) ZNODES, ACHAR(10)
-            ELSE IF (DIMS == 1) THEN
-               WRITE(54321) 'DATASET RECTILINEAR_GRID'//ACHAR(10)
-
-               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
-               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
-               WRITE(54321) CURRENT_TIME
-               
-               WRITE(54321) 'DIMENSIONS '//ITOA(NX+1)//' '//ITOA(1)//' '//ITOA(1)//ACHAR(10)
-
-               WRITE(54321) 'X_COORDINATES '//ITOA(NX+1)//' double'//ACHAR(10)
-               WRITE(54321) XNODES, ACHAR(10)
-
-               WRITE(54321) 'Y_COORDINATES '//ITOA(1)//' double'//ACHAR(10)
-               WRITE(54321) 0.d0, ACHAR(10)
-
-               WRITE(54321) 'Z_COORDINATES '//ITOA(1)//' double'//ACHAR(10)
-               WRITE(54321) 0.d0, ACHAR(10)
-            ELSE IF (DIMS == 2) THEN
-               WRITE(54321) 'DATASET RECTILINEAR_GRID'//ACHAR(10)
-
-               WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
-               WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
-               WRITE(54321) CURRENT_TIME
-               
-               WRITE(54321) 'DIMENSIONS '//ITOA(NX+1)//' '//ITOA(NY+1)//' '//ITOA(1)//ACHAR(10)
-
-               WRITE(54321) 'X_COORDINATES '//ITOA(NX+1)//' double'//ACHAR(10)
-               WRITE(54321) XNODES, ACHAR(10)
-
-               WRITE(54321) 'Y_COORDINATES '//ITOA(NY+1)//' double'//ACHAR(10)
-               WRITE(54321) YNODES, ACHAR(10)
-
-               WRITE(54321) 'Z_COORDINATES '//ITOA(1)//' double'//ACHAR(10)
-               WRITE(54321) 0.d0, ACHAR(10)
-            END IF
-
-            WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
-            IF (BOOL_DUMP_MOMENTS) THEN
-               WRITE(54321) 'FIELD FieldData '//ITOA( (13+33)*N_SPECIES+1+N_REACTIONS )//ACHAR(10)
-            ELSE
-               WRITE(54321) 'FIELD FieldData '//ITOA( 13*N_SPECIES+1+N_REACTIONS )//ACHAR(10)
-            END IF
-
-
-            ! Write per-cell value
-            WRITE(54321) 'PROC_ID '//ITOA(1)//' '//ITOA(NCELLS)//' integer'//ACHAR(10)
-            WRITE(54321) CELL_PROC_ID, ACHAR(10)
-
-            ! Write per-cell, per-species values
-            DO JS = 1, N_SPECIES
-               FIRST = 1 + (JS-1)*NCELLS
-               LAST  = JS*NCELLS
-               SPWT = SPECIES(JS)%SPWT
-            
-               WRITE(string, *) 'number_particles_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_NP(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'nrho_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               IF (GRID_TYPE == RECTILINEAR_NONUNIFORM .OR. GRID_TYPE == UNSTRUCTURED .OR. AXI) THEN
-                  IF (BOOL_RADIAL_WEIGHTING) THEN
-                     IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
-                        WRITE(54321) AVG_NREAL(FIRST:LAST)/CELL_VOLUMES, ACHAR(10)
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
-                        WRITE(54321) AVG_NREAL(FIRST:LAST)/U1D_GRID%CELL_VOLUMES, ACHAR(10)
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
-                        WRITE(54321) AVG_NREAL(FIRST:LAST)/U2D_GRID%CELL_VOLUMES, ACHAR(10)
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
-                        WRITE(54321) AVG_NREAL(FIRST:LAST)/U3D_GRID%CELL_VOLUMES, ACHAR(10)
-                     END IF
-                  ELSE
-                     IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
-                        WRITE(54321) AVG_NREAL(FIRST:LAST)/CELL_VOLUMES, ACHAR(10)
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
-                        WRITE(54321) AVG_NREAL(FIRST:LAST)/U1D_GRID%CELL_VOLUMES, ACHAR(10)
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
-                        WRITE(54321) AVG_NREAL(FIRST:LAST)/U2D_GRID%CELL_VOLUMES, ACHAR(10)
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
-                        WRITE(54321) AVG_NREAL(FIRST:LAST)/U3D_GRID%CELL_VOLUMES, ACHAR(10)
-                     END IF
-                  END IF
-               ELSE IF (GRID_TYPE == RECTILINEAR_UNIFORM) THEN
-                  WRITE(54321) AVG_NREAL(FIRST:LAST)/CELL_VOL, ACHAR(10)
-               END IF
-
-               WRITE(string, *) 'vx_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_VX(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'vy_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_VY(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'vz_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_VZ(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'Ttrx_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_TTRX(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'Ttry_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_TTRY(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'Ttrz_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_TTRZ(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'Ttr_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_TTR(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'Trot_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_TROT(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'Tvib_mean_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_TVIB(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'num_cumulated_one_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' integer'//ACHAR(10)
-               WRITE(54321) AVG_CUMULATED_INTENSIVE_ONE(FIRST:LAST), ACHAR(10)
-
-               WRITE(string, *) 'num_cumulated_two_', SPECIES(JS)%NAME
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' integer'//ACHAR(10)
-               WRITE(54321) AVG_CUMULATED_INTENSIVE_TWO(FIRST:LAST), ACHAR(10)
-
-            
-               IF (BOOL_DUMP_MOMENTS) THEN
-                  ! Now dump the 33 moments
-                  DO MOM = 1, 33
-                     WRITE(54321) TRIM(MOMENT_STRING(MOM))//SPECIES(JS)%NAME//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-                     WRITE(54321) AVG_MOMENTS(FIRST:LAST, MOM), ACHAR(10)
+               IF (DIMS == 0) THEN
+                  ZNODES = 0
+                  DO I = 0, NZ
+                     ZNODES(I+1) = ZMIN + (ZMAX-ZMIN)/NZ*I
                   END DO
                END IF
-         
-         
-            END DO
-
-            ! Write per-cell per-reaction values
-            DO JR = 1, N_REACTIONS
-               FIRST = 1 + (JR-1)*NCELLS
-               LAST  = JR*NCELLS
-            
-               WRITE(string, '(A14,I0)') 'reaction_rate_', JR
-               WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
-               WRITE(54321) AVG_REACTIONS(FIRST:LAST), ACHAR(10)
-            END DO
-
-            IF (PIC_TYPE .NE. NONE) THEN
-               IF (GRID_TYPE == UNSTRUCTURED) THEN
-                  IF (PIC_TYPE == EXPLICITLIMITED) THEN
-                     WRITE(54321) 'FIELD FieldData '//ITOA(4)//ACHAR(10)
-                  ELSE
-                     WRITE(54321) 'FIELD FieldData '//ITOA(3)//ACHAR(10)
-                  END IF
-                  WRITE(54321) 'E_X '//ITOA(1)//' '//ITOA( NCELLS )//' double'//ACHAR(10)
-                  WRITE(54321) E_FIELD(1,:,:), ACHAR(10)
-
-                  WRITE(54321) 'E_Y '//ITOA(1)//' '//ITOA( NCELLS )//' double'//ACHAR(10)
-                  WRITE(54321) E_FIELD(2,:,:), ACHAR(10)
-
-                  WRITE(54321) 'E_Z '//ITOA(1)//' '//ITOA( NCELLS )//' double'//ACHAR(10)
-                  WRITE(54321) E_FIELD(3,:,:), ACHAR(10)
-
-                  IF (PIC_TYPE == EXPLICITLIMITED) THEN
-                     WRITE(54321) 'DXLDRATIO '//ITOA(1)//' '//ITOA( NCELLS )//' double'//ACHAR(10)
-                     WRITE(54321) DXLDRATIO, ACHAR(10)
-                  END IF
-
-
-                  WRITE(54321) 'POINT_DATA '//ITOA( NNODES )//ACHAR(10)
-                  IF (PIC_TYPE == HYBRID) THEN
-                     WRITE(54321) 'FIELD FieldData '//ITOA(7)//ACHAR(10)
-                  ELSE
-                     WRITE(54321) 'FIELD FieldData '//ITOA(6)//ACHAR(10)
-                  END IF
-               
-                  WRITE(54321) 'QRHO '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) RHS, ACHAR(10)
-
-                  WRITE(54321) 'PHI '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) AVG_PHI, ACHAR(10)
-
-                  WRITE(54321) 'PHIBAR '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) PHIBAR_FIELD, ACHAR(10)
-
-                  WRITE(54321) 'B_X '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) B_FIELD(1,:,:), ACHAR(10)
-
-                  WRITE(54321) 'B_Y '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) B_FIELD(2,:,:), ACHAR(10)
-
-                  WRITE(54321) 'B_Z '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) B_FIELD(3,:,:), ACHAR(10)
-
-                  IF (PIC_TYPE == HYBRID) THEN
-                     WRITE(54321) 'nrho_e_FLUID '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                     WRITE(54321) BOLTZ_NRHOE, ACHAR(10)
-                  END IF
-               ELSE
-                  WRITE(54321) 'POINT_DATA '//ITOA( NNODES )//ACHAR(10)
-                  WRITE(54321) 'FIELD FieldData '//ITOA(5)//ACHAR(10)
-               
-                  WRITE(54321) 'QRHO '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) RHS, ACHAR(10)
-
-                  WRITE(54321) 'PHI '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) AVG_PHI, ACHAR(10)
-
-                  WRITE(54321) 'E_X '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) E_FIELD(1,:,:), ACHAR(10)
-
-                  WRITE(54321) 'E_Y '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) E_FIELD(2,:,:), ACHAR(10)
-
-                  WRITE(54321) 'E_Z '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
-                  WRITE(54321) E_FIELD(3,:,:), ACHAR(10)
-               END IF
+            ELSE IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
+               XNODES = XCOORD
+               YNODES = YCOORD
             END IF
 
-            CLOSE(54321)
-            
-         ELSE  ! Write ASCII output.
-            OPEN(54321, FILE=file_name, ACCESS='SEQUENTIAL', FORM='FORMATTED', STATUS='NEW')
+            ! Write to file.
 
-            WRITE(54321,'(A)') '# vtk DataFile Version 3.0'
-            WRITE(54321,'(A)') 'vtk output'
-            WRITE(54321,'(A)') 'ASCII'
+            !WRITE(file_name,'(A, I0, A)') '/media/pietro/Storage/panteradumps/dsmc_flowfield_', tID, '.vtk'
+            WRITE(file_name,'(A, A, I0, A, I0, A)') TRIM(ADJUSTL(FLOWFIELD_SAVE_PATH)), 'dsmc_flowfield_', ITASK, '_', tID, '.vtk'
 
-            IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
-               WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+            IF (BOOL_BINARY_OUTPUT) THEN
+               OPEN(54321, FILE=file_name, ACCESS='STREAM', FORM='UNFORMATTED', STATUS='NEW', CONVERT='BIG_ENDIAN')
 
-               WRITE(54321,'(A)') 'FIELD FieldData 1'
-               WRITE(54321,'(A)') 'TIME 1 1 double'
-               WRITE(54321,*) CURRENT_TIME
-               
-               WRITE(54321,'(A,I10,A7)') 'POINTS', U1D_GRID%NUM_NODES, 'double'
-               DO I = 1, U1D_GRID%NUM_NODES
-                  WRITE(54321,*) U1D_GRID%NODE_COORDS(:,I)
-               END DO
-
-               WRITE(54321,'(A,I10,I10)') 'CELLS', U1D_GRID%NUM_CELLS, 3*U1D_GRID%NUM_CELLS 
-               DO I = 1, U1D_GRID%NUM_CELLS
-                  WRITE(54321,*) 2, (U1D_GRID%CELL_NODES(:,I) - 1)
-               END DO
-
-               WRITE(54321,'(A,I10)') 'CELL_TYPES', U1D_GRID%NUM_CELLS
-               DO I = 1, U1D_GRID%NUM_CELLS
-                  WRITE(54321,*) 3
-               END DO
-            ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
-               WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
-
-               WRITE(54321,'(A)') 'FIELD FieldData 1'
-               WRITE(54321,'(A)') 'TIME 1 1 double'
-               WRITE(54321,*) CURRENT_TIME
-               
-               WRITE(54321,'(A,I10,A7)') 'POINTS', U2D_GRID%NUM_NODES, 'double'
-               DO I = 1, U2D_GRID%NUM_NODES
-                  WRITE(54321,*) U2D_GRID%NODE_COORDS(:,I)
-               END DO
-
-               WRITE(54321,'(A,I10,I10)') 'CELLS', U2D_GRID%NUM_CELLS, 4*U2D_GRID%NUM_CELLS 
-               DO I = 1, U2D_GRID%NUM_CELLS
-                  WRITE(54321,*) 3, (U2D_GRID%CELL_NODES(:,I) - 1)
-               END DO
-
-               WRITE(54321,'(A,I10)') 'CELL_TYPES', U2D_GRID%NUM_CELLS
-               DO I = 1, U2D_GRID%NUM_CELLS
-                  WRITE(54321,*) 5
-               END DO
-            ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
-               WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
-
-               WRITE(54321,'(A)') 'FIELD FieldData 1'
-               WRITE(54321,'(A)') 'TIME 1 1 double'
-               WRITE(54321,*) CURRENT_TIME
-               
-               WRITE(54321,'(A,I10,A7)') 'POINTS', U3D_GRID%NUM_NODES, 'double'
-               DO I = 1, U3D_GRID%NUM_NODES
-                  WRITE(54321,*) U3D_GRID%NODE_COORDS(:,I)
-               END DO
-
-               WRITE(54321,'(A,I10,I10)') 'CELLS', U3D_GRID%NUM_CELLS, 5*U3D_GRID%NUM_CELLS 
-               DO I = 1, U3D_GRID%NUM_CELLS
-                  WRITE(54321,*) 4, (U3D_GRID%CELL_NODES(:,I) - 1)
-               END DO
-
-               WRITE(54321,'(A,I10)') 'CELL_TYPES', U3D_GRID%NUM_CELLS
-               DO I = 1, U3D_GRID%NUM_CELLS
-                  WRITE(54321,*) 10
-               END DO
-
-            ELSE IF (DIMS == 0) THEN
-               WRITE(54321,'(A)') 'DATASET RECTILINEAR_GRID'
-
-               WRITE(54321,'(A)') 'FIELD FieldData 1'
-               WRITE(54321,'(A)') 'TIME 1 1 double'
-               WRITE(54321,*) CURRENT_TIME
-               
-               WRITE(54321,'(A,I10,I10,I10)') 'DIMENSIONS', NX+1, NY+1, NZ+1
-
-               WRITE(54321,'(A,I10,A7)') 'X_COORDINATES', NX+1, 'double'
-               WRITE(54321,*) XNODES
-
-               WRITE(54321,'(A,I10,A7)') 'Y_COORDINATES', NY+1, 'double'
-               WRITE(54321,*) YNODES
-
-               WRITE(54321,'(A,I10,A7)') 'Z_COORDINATES', NZ+1, 'double'
-               WRITE(54321,*) ZNODES
-            ELSE IF (DIMS == 1) THEN
-               WRITE(54321,'(A)') 'DATASET RECTILINEAR_GRID'
-
-               WRITE(54321,'(A)') 'FIELD FieldData 1'
-               WRITE(54321,'(A)') 'TIME 1 1 double'
-               WRITE(54321,*) CURRENT_TIME
-               
-               WRITE(54321,'(A,I10,I10,I10)') 'DIMENSIONS', NX+1, NY+1, 1 
-
-               WRITE(54321,'(A,I10,A7)') 'X_COORDINATES', NX+1, 'double'
-               WRITE(54321,*) XNODES
-
-               WRITE(54321,'(A,I10,A7)') 'Y_COORDINATES', 1, 'double'
-               WRITE(54321,*) 0.
-
-               WRITE(54321,'(A,I10,A7)') 'Z_COORDINATES', 1, 'double'
-               WRITE(54321,*) 0.
-            ELSE IF (DIMS == 2) THEN
-               WRITE(54321,'(A)') 'DATASET RECTILINEAR_GRID'
-
-               WRITE(54321,'(A)') 'FIELD FieldData 1'
-               WRITE(54321,'(A)') 'TIME 1 1 double'
-               WRITE(54321,*) CURRENT_TIME
-               
-               WRITE(54321,'(A,I10,I10,I10)') 'DIMENSIONS', NX+1, NY+1, 1 
-
-               WRITE(54321,'(A,I10,A7)') 'X_COORDINATES', NX+1, 'double'
-               WRITE(54321,*) XNODES
-
-               WRITE(54321,'(A,I10,A7)') 'Y_COORDINATES', NY+1, 'double'
-               WRITE(54321,*) YNODES
-
-               WRITE(54321,'(A,I10,A7)') 'Z_COORDINATES', 1, 'double'
-               WRITE(54321,*) 0.
-            END IF
-            
-            WRITE(54321,'(A,I10)') 'CELL_DATA', NCELLS
-            IF (BOOL_DUMP_MOMENTS) THEN
-               WRITE(54321,'(A,I10)') 'FIELD FieldData', (13+33)*N_SPECIES+1+N_REACTIONS
-            ELSE
-               WRITE(54321,'(A,I10)') 'FIELD FieldData', 13*N_SPECIES+1+N_REACTIONS
-            END IF
+               WRITE(54321) '# vtk DataFile Version 3.0'//ACHAR(10)
+               WRITE(54321) 'vtk output'//ACHAR(10)
+               WRITE(54321) 'BINARY'//ACHAR(10)
 
 
-            ! Write per-cell value
-            WRITE(54321,'(A,I10,I10,A8)') 'PROC_ID', 1, NCELLS, 'integer'
-            WRITE(54321,*) CELL_PROC_ID
+               IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                  WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
 
-            ! Write per-cell, per-species values
-            DO JS = 1, N_SPECIES
-               FIRST = 1 + (JS-1)*NCELLS
-               LAST  = JS*NCELLS
-               SPWT = SPECIES(JS)%SPWT
-            
-               WRITE(string, *) 'number_particles_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_NP(FIRST:LAST)
+                  WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+                  WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+                  WRITE(54321) CURRENT_TIME
 
-               WRITE(string, *) 'nrho_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               IF (GRID_TYPE == RECTILINEAR_NONUNIFORM .OR. GRID_TYPE == UNSTRUCTURED .OR. AXI) THEN
-                  IF (BOOL_RADIAL_WEIGHTING) THEN
-                     IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
-                        WRITE(54321,*) AVG_NREAL(FIRST:LAST)/CELL_VOLUMES
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
-                        WRITE(54321,*) AVG_NREAL(FIRST:LAST)/U1D_GRID%CELL_VOLUMES
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
-                        WRITE(54321,*) AVG_NREAL(FIRST:LAST)/U2D_GRID%CELL_VOLUMES
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
-                        WRITE(54321,*) AVG_NREAL(FIRST:LAST)/U3D_GRID%CELL_VOLUMES
-                     END IF
-                  ELSE
-                     IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
-                        WRITE(54321,*) AVG_NREAL(FIRST:LAST)/CELL_VOLUMES
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
-                        WRITE(54321,*) AVG_NREAL(FIRST:LAST)/U1D_GRID%CELL_VOLUMES
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
-                        WRITE(54321,*) AVG_NREAL(FIRST:LAST)/U2D_GRID%CELL_VOLUMES
-                     ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
-                        WRITE(54321,*) AVG_NREAL(FIRST:LAST)/U3D_GRID%CELL_VOLUMES
-                     END IF
-                  END IF
-               ELSE IF (GRID_TYPE == RECTILINEAR_UNIFORM) THEN
-                  WRITE(54321,*) AVG_NREAL(FIRST:LAST)/CELL_VOL
-               END IF
-
-               WRITE(string, *) 'vx_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_VX(FIRST:LAST)
-
-               WRITE(string, *) 'vy_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_VY(FIRST:LAST)
-
-               WRITE(string, *) 'vz_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_VZ(FIRST:LAST)
-
-               WRITE(string, *) 'Ttrx_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_TTRX(FIRST:LAST)
-
-               WRITE(string, *) 'Ttry_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_TTRY(FIRST:LAST)
-
-               WRITE(string, *) 'Ttrz_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_TTRZ(FIRST:LAST)
-
-               WRITE(string, *) 'Ttr_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_TTR(FIRST:LAST)
-
-               WRITE(string, *) 'Trot_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_TROT(FIRST:LAST)
-
-               WRITE(string, *) 'Tvib_mean_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_TVIB(FIRST:LAST)
-
-               WRITE(string, *) 'num_cumulated_one_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A8)') string, 1, NCELLS, 'integer'
-               WRITE(54321,*) AVG_CUMULATED_INTENSIVE_ONE(FIRST:LAST)
-
-               WRITE(string, *) 'num_cumulated_two_', SPECIES(JS)%NAME
-               WRITE(54321,'(A,I10,I10,A8)') string, 1, NCELLS, 'integer'
-               WRITE(54321,*) AVG_CUMULATED_INTENSIVE_TWO(FIRST:LAST)
-
-            
-               IF (BOOL_DUMP_MOMENTS) THEN
-                  ! Now dump the 33 moments
-                  DO MOM = 1, 33
-                     WRITE(54321,'(A,A,I10,I10,A7)') TRIM(MOMENT_STRING(MOM)), SPECIES(JS)%NAME, 1, NCELLS, 'double'
-                     WRITE(54321,*) AVG_MOMENTS(FIRST:LAST, MOM)
+                  WRITE(54321) 'POINTS '//ITOA(U1D_GRID%NUM_NODES)//' double'//ACHAR(10)
+                  DO I = 1, U1D_GRID%NUM_NODES
+                     WRITE(54321) U1D_GRID%NODE_COORDS(:,I)
                   END DO
+
+                  WRITE(54321) 'CELLS '//ITOA(U1D_GRID%NUM_CELLS)//' '//ITOA(3*U1D_GRID%NUM_CELLS)//ACHAR(10)
+                  DO I = 1, U1D_GRID%NUM_CELLS
+                     WRITE(54321) 2, (U1D_GRID%CELL_NODES(:,I) - 1)
+                  END DO
+
+                  WRITE(54321) 'CELL_TYPES '//ITOA(U1D_GRID%NUM_CELLS)//ACHAR(10)
+                  DO I = 1, U1D_GRID%NUM_CELLS
+                     WRITE(54321) 3
+                  END DO
+               ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                  WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
+
+                  WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+                  WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+                  WRITE(54321) CURRENT_TIME
+
+                  WRITE(54321) 'POINTS '//ITOA(U2D_GRID%NUM_NODES)//' double'//ACHAR(10)
+                  DO I = 1, U2D_GRID%NUM_NODES
+                     WRITE(54321) U2D_GRID%NODE_COORDS(:,I)
+                  END DO
+
+                  WRITE(54321) 'CELLS '//ITOA(U2D_GRID%NUM_CELLS)//' '//ITOA(4*U2D_GRID%NUM_CELLS)//ACHAR(10)
+                  DO I = 1, U2D_GRID%NUM_CELLS
+                     WRITE(54321) 3, (U2D_GRID%CELL_NODES(:,I) - 1)
+                  END DO
+
+                  WRITE(54321) 'CELL_TYPES '//ITOA(U2D_GRID%NUM_CELLS)//ACHAR(10)
+                  DO I = 1, U2D_GRID%NUM_CELLS
+                     WRITE(54321) 5
+                  END DO
+               ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
+                  WRITE(54321) 'DATASET UNSTRUCTURED_GRID'//ACHAR(10)
+
+                  WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+                  WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+                  WRITE(54321) CURRENT_TIME
+
+                  WRITE(54321) 'POINTS '//ITOA(U3D_GRID%NUM_NODES)//' double'//ACHAR(10)
+                  DO I = 1, U3D_GRID%NUM_NODES
+                     WRITE(54321) U3D_GRID%NODE_COORDS(:,I)
+                  END DO
+
+                  WRITE(54321) 'CELLS '//ITOA(U3D_GRID%NUM_CELLS)//' '//ITOA(5*U3D_GRID%NUM_CELLS)//ACHAR(10)
+                  DO I = 1, U3D_GRID%NUM_CELLS
+                     WRITE(54321) 4, (U3D_GRID%CELL_NODES(:,I) - 1)
+                  END DO
+
+                  WRITE(54321) 'CELL_TYPES '//ITOA(U3D_GRID%NUM_CELLS)//ACHAR(10)
+                  DO I = 1, U3D_GRID%NUM_CELLS
+                     WRITE(54321) 10
+                  END DO
+               ELSE IF (DIMS == 0) THEN
+                  WRITE(54321) 'DATASET RECTILINEAR_GRID'//ACHAR(10)
+
+                  WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+                  WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+                  WRITE(54321) CURRENT_TIME
+                  
+                  WRITE(54321) 'DIMENSIONS '//ITOA(NX+1)//' '//ITOA(NY+1)//' '//ITOA(NZ+1)//ACHAR(10)
+
+                  WRITE(54321) 'X_COORDINATES '//ITOA(NX+1)//' double'//ACHAR(10)
+                  WRITE(54321) XNODES, ACHAR(10)
+
+                  WRITE(54321) 'Y_COORDINATES '//ITOA(NY+1)//' double'//ACHAR(10)
+                  WRITE(54321) YNODES, ACHAR(10)
+
+                  WRITE(54321) 'Z_COORDINATES '//ITOA(NZ+1)//' double'//ACHAR(10)
+                  WRITE(54321) ZNODES, ACHAR(10)
+               ELSE IF (DIMS == 1) THEN
+                  WRITE(54321) 'DATASET RECTILINEAR_GRID'//ACHAR(10)
+
+                  WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+                  WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+                  WRITE(54321) CURRENT_TIME
+                  
+                  WRITE(54321) 'DIMENSIONS '//ITOA(NX+1)//' '//ITOA(1)//' '//ITOA(1)//ACHAR(10)
+
+                  WRITE(54321) 'X_COORDINATES '//ITOA(NX+1)//' double'//ACHAR(10)
+                  WRITE(54321) XNODES, ACHAR(10)
+
+                  WRITE(54321) 'Y_COORDINATES '//ITOA(1)//' double'//ACHAR(10)
+                  WRITE(54321) 0.d0, ACHAR(10)
+
+                  WRITE(54321) 'Z_COORDINATES '//ITOA(1)//' double'//ACHAR(10)
+                  WRITE(54321) 0.d0, ACHAR(10)
+               ELSE IF (DIMS == 2) THEN
+                  WRITE(54321) 'DATASET RECTILINEAR_GRID'//ACHAR(10)
+
+                  WRITE(54321) 'FIELD FieldData 1'//ACHAR(10)
+                  WRITE(54321) 'TIME 1 1 double'//ACHAR(10)
+                  WRITE(54321) CURRENT_TIME
+                  
+                  WRITE(54321) 'DIMENSIONS '//ITOA(NX+1)//' '//ITOA(NY+1)//' '//ITOA(1)//ACHAR(10)
+
+                  WRITE(54321) 'X_COORDINATES '//ITOA(NX+1)//' double'//ACHAR(10)
+                  WRITE(54321) XNODES, ACHAR(10)
+
+                  WRITE(54321) 'Y_COORDINATES '//ITOA(NY+1)//' double'//ACHAR(10)
+                  WRITE(54321) YNODES, ACHAR(10)
+
+                  WRITE(54321) 'Z_COORDINATES '//ITOA(1)//' double'//ACHAR(10)
+                  WRITE(54321) 0.d0, ACHAR(10)
                END IF
-         
-         
-            END DO
 
-            ! Write per-cell per-reaction values
-            DO JR = 1, N_REACTIONS
-               FIRST = 1 + (JR-1)*NCELLS
-               LAST  = JR*NCELLS
-            
-               WRITE(string, '(A14,I0)') 'reaction_rate_', JR
-               WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
-               WRITE(54321,*) AVG_REACTIONS(FIRST:LAST)
-            END DO
-
-
-            IF (PIC_TYPE .NE. NONE) THEN
-               IF (GRID_TYPE == UNSTRUCTURED) THEN
-                  WRITE(54321,'(A,I10)') 'FIELD FieldData', 3
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'E_X', 1, NCELLS, 'double'
-                  WRITE(54321,*) E_FIELD(1,:,:)
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'E_Y', 1, NCELLS, 'double'
-                  WRITE(54321,*) E_FIELD(2,:,:)
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'E_Z', 1, NCELLS, 'double'
-                  WRITE(54321,*) E_FIELD(3,:,:)
-
-                  WRITE(54321,'(A,I10)') 'POINT_DATA', NNODES
-                  WRITE(54321,'(A,I10)') 'FIELD FieldData', 6
-               
-                  WRITE(54321,'(A,I10,I10,A7)') 'QRHO', 1, NNODES, 'double'
-                  WRITE(54321,*) RHS
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'PHI', 1, NNODES, 'double'
-                  WRITE(54321,*) AVG_PHI
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'PHIBAR', 1, NNODES, 'double'
-                  WRITE(54321,*) PHIBAR_FIELD
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'B_X', 1, NNODES, 'double'
-                  WRITE(54321,*) B_FIELD(1,:,:)
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'B_Y', 1, NNODES, 'double'
-                  WRITE(54321,*) B_FIELD(2,:,:)
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'B_Z', 1, NNODES, 'double'
-                  WRITE(54321,*) B_FIELD(3,:,:)
-
-
+               WRITE(54321) 'CELL_DATA '//ITOA(NCELLS)//ACHAR(10)
+               IF (BOOL_DUMP_MOMENTS) THEN
+                  WRITE(54321) 'FIELD FieldData '//ITOA( (13+33)*N_SPECIES+1+N_REACTIONS )//ACHAR(10)
                ELSE
-                  WRITE(54321,'(A,I10)') 'POINT_DATA', NNODES
-                  WRITE(54321,'(A,I10)') 'FIELD FieldData', 5
-               
-                  WRITE(54321,'(A,I10,I10,A7)') 'QRHO', 1, NNODES, 'double'
-                  WRITE(54321,*) RHS
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'PHI', 1, NNODES, 'double'
-                  WRITE(54321,*) AVG_PHI
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'E_X', 1, NNODES, 'double'
-                  WRITE(54321,*) E_FIELD(1,:,:)
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'E_Y', 1, NNODES, 'double'
-                  WRITE(54321,*) E_FIELD(2,:,:)
-
-                  WRITE(54321,'(A,I10,I10,A7)') 'E_Z', 1, NNODES, 'double'
-                  WRITE(54321,*) E_FIELD(3,:,:)
+                  WRITE(54321) 'FIELD FieldData '//ITOA( 13*N_SPECIES+1+N_REACTIONS )//ACHAR(10)
                END IF
+
+
+               ! Write per-cell value
+               WRITE(54321) 'PROC_ID '//ITOA(1)//' '//ITOA(NCELLS)//' integer'//ACHAR(10)
+               WRITE(54321) CELL_PROC_ID, ACHAR(10)
+
+               ! Write per-cell, per-species values
+               DO JS = 1, N_SPECIES
+                  FIRST = 1 + (JS-1)*NCELLS
+                  LAST  = JS*NCELLS
+                  SPWT = SPECIES(JS)%SPWT
+               
+                  WRITE(string, *) 'number_particles_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NP(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'nrho_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  IF (GRID_TYPE == RECTILINEAR_NONUNIFORM .OR. GRID_TYPE == UNSTRUCTURED .OR. AXI) THEN
+                     IF (BOOL_RADIAL_WEIGHTING) THEN
+                        IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
+                           WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/CELL_VOLUMES, ACHAR(10)
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                           WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U1D_GRID%CELL_VOLUMES, ACHAR(10)
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                           WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U2D_GRID%CELL_VOLUMES, ACHAR(10)
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
+                           WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U3D_GRID%CELL_VOLUMES, ACHAR(10)
+                        END IF
+                     ELSE
+                        IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
+                           WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/CELL_VOLUMES, ACHAR(10)
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                           WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U1D_GRID%CELL_VOLUMES, ACHAR(10)
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                           WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U2D_GRID%CELL_VOLUMES, ACHAR(10)
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
+                           WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U3D_GRID%CELL_VOLUMES, ACHAR(10)
+                        END IF
+                     END IF
+                  ELSE IF (GRID_TYPE == RECTILINEAR_UNIFORM) THEN
+                     WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/CELL_VOL, ACHAR(10)
+                  END IF
+
+                  WRITE(string, *) 'vx_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_VX(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'vy_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_VY(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'vz_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_VZ(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'Ttrx_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_TTRX(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'Ttry_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_TTRY(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'Ttrz_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_TTRZ(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'Ttr_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_TTR(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'Trot_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_TROT(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'Tvib_mean_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_TVIB(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'num_cumulated_one_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' integer'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(FIRST:LAST), ACHAR(10)
+
+                  WRITE(string, *) 'num_cumulated_two_', SPECIES(JS)%NAME
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' integer'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(FIRST:LAST), ACHAR(10)
+
+               
+                  IF (BOOL_DUMP_MOMENTS) THEN
+                     ! Now dump the 33 moments
+                     DO MOM = 1, 33
+                        WRITE(54321) TRIM(MOMENT_STRING(MOM))//SPECIES(JS)%NAME//' '//ITOA(1)//' '//ITOA(NCELLS) &
+                        //' double'//ACHAR(10)
+                        WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_MOMENTS(FIRST:LAST, MOM), ACHAR(10)
+                     END DO
+                  END IF
+            
+            
+               END DO
+
+               ! Write per-cell per-reaction values
+               DO JR = 1, N_REACTIONS
+                  FIRST = 1 + (JR-1)*NCELLS
+                  LAST  = JR*NCELLS
+               
+                  WRITE(string, '(A14,I0)') 'reaction_rate_', JR
+                  WRITE(54321) string//' '//ITOA(1)//' '//ITOA(NCELLS)//' double'//ACHAR(10)
+                  WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_REACTIONS(FIRST:LAST), ACHAR(10)
+               END DO
+
+               IF (PIC_TYPE .NE. NONE) THEN
+                  IF (GRID_TYPE == UNSTRUCTURED) THEN
+                     IF (PIC_TYPE == EXPLICITLIMITED) THEN
+                        WRITE(54321) 'FIELD FieldData '//ITOA(4)//ACHAR(10)
+                     ELSE
+                        WRITE(54321) 'FIELD FieldData '//ITOA(3)//ACHAR(10)
+                     END IF
+                     WRITE(54321) 'E_X '//ITOA(1)//' '//ITOA( NCELLS )//' double'//ACHAR(10)
+                     WRITE(54321) E_FIELD(1,:,:), ACHAR(10)
+
+                     WRITE(54321) 'E_Y '//ITOA(1)//' '//ITOA( NCELLS )//' double'//ACHAR(10)
+                     WRITE(54321) E_FIELD(2,:,:), ACHAR(10)
+
+                     WRITE(54321) 'E_Z '//ITOA(1)//' '//ITOA( NCELLS )//' double'//ACHAR(10)
+                     WRITE(54321) E_FIELD(3,:,:), ACHAR(10)
+
+                     IF (PIC_TYPE == EXPLICITLIMITED) THEN
+                        WRITE(54321) 'DXLDRATIO '//ITOA(1)//' '//ITOA( NCELLS )//' double'//ACHAR(10)
+                        WRITE(54321) DXLDRATIO, ACHAR(10)
+                     END IF
+
+
+                     WRITE(54321) 'POINT_DATA '//ITOA( NNODES )//ACHAR(10)
+                     IF (PIC_TYPE == HYBRID) THEN
+                        WRITE(54321) 'FIELD FieldData '//ITOA(7)//ACHAR(10)
+                     ELSE
+                        WRITE(54321) 'FIELD FieldData '//ITOA(6)//ACHAR(10)
+                     END IF
+                  
+                     WRITE(54321) 'QRHO '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) RHS, ACHAR(10)
+
+                     WRITE(54321) 'PHI '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_PHI, ACHAR(10)
+
+                     WRITE(54321) 'PHIBAR '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) PHIBAR_FIELD, ACHAR(10)
+
+                     WRITE(54321) 'B_X '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) B_FIELD(1,:,:), ACHAR(10)
+
+                     WRITE(54321) 'B_Y '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) B_FIELD(2,:,:), ACHAR(10)
+
+                     WRITE(54321) 'B_Z '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) B_FIELD(3,:,:), ACHAR(10)
+
+                     IF (PIC_TYPE == HYBRID) THEN
+                        WRITE(54321) 'nrho_e_FLUID '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                        WRITE(54321) BOLTZ_NRHOE, ACHAR(10)
+                     END IF
+                  ELSE
+                     WRITE(54321) 'POINT_DATA '//ITOA( NNODES )//ACHAR(10)
+                     WRITE(54321) 'FIELD FieldData '//ITOA(5)//ACHAR(10)
+                  
+                     WRITE(54321) 'QRHO '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) RHS, ACHAR(10)
+
+                     WRITE(54321) 'PHI '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) GRID_AVG_TASKS(ITASK)%AVG_PHI, ACHAR(10)
+
+                     WRITE(54321) 'E_X '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) E_FIELD(1,:,:), ACHAR(10)
+
+                     WRITE(54321) 'E_Y '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) E_FIELD(2,:,:), ACHAR(10)
+
+                     WRITE(54321) 'E_Z '//ITOA(1)//' '//ITOA( NNODES )//' double'//ACHAR(10)
+                     WRITE(54321) E_FIELD(3,:,:), ACHAR(10)
+                  END IF
+               END IF
+
+               CLOSE(54321)
+               
+            ELSE  ! Write ASCII output.
+               OPEN(54321, FILE=file_name, ACCESS='SEQUENTIAL', FORM='FORMATTED', STATUS='NEW')
+
+               WRITE(54321,'(A)') '# vtk DataFile Version 3.0'
+               WRITE(54321,'(A)') 'vtk output'
+               WRITE(54321,'(A)') 'ASCII'
+
+               IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                  WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+                  WRITE(54321,'(A)') 'FIELD FieldData 1'
+                  WRITE(54321,'(A)') 'TIME 1 1 double'
+                  WRITE(54321,*) CURRENT_TIME
+                  
+                  WRITE(54321,'(A,I10,A7)') 'POINTS', U1D_GRID%NUM_NODES, 'double'
+                  DO I = 1, U1D_GRID%NUM_NODES
+                     WRITE(54321,*) U1D_GRID%NODE_COORDS(:,I)
+                  END DO
+
+                  WRITE(54321,'(A,I10,I10)') 'CELLS', U1D_GRID%NUM_CELLS, 3*U1D_GRID%NUM_CELLS 
+                  DO I = 1, U1D_GRID%NUM_CELLS
+                     WRITE(54321,*) 2, (U1D_GRID%CELL_NODES(:,I) - 1)
+                  END DO
+
+                  WRITE(54321,'(A,I10)') 'CELL_TYPES', U1D_GRID%NUM_CELLS
+                  DO I = 1, U1D_GRID%NUM_CELLS
+                     WRITE(54321,*) 3
+                  END DO
+               ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                  WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+                  WRITE(54321,'(A)') 'FIELD FieldData 1'
+                  WRITE(54321,'(A)') 'TIME 1 1 double'
+                  WRITE(54321,*) CURRENT_TIME
+                  
+                  WRITE(54321,'(A,I10,A7)') 'POINTS', U2D_GRID%NUM_NODES, 'double'
+                  DO I = 1, U2D_GRID%NUM_NODES
+                     WRITE(54321,*) U2D_GRID%NODE_COORDS(:,I)
+                  END DO
+
+                  WRITE(54321,'(A,I10,I10)') 'CELLS', U2D_GRID%NUM_CELLS, 4*U2D_GRID%NUM_CELLS 
+                  DO I = 1, U2D_GRID%NUM_CELLS
+                     WRITE(54321,*) 3, (U2D_GRID%CELL_NODES(:,I) - 1)
+                  END DO
+
+                  WRITE(54321,'(A,I10)') 'CELL_TYPES', U2D_GRID%NUM_CELLS
+                  DO I = 1, U2D_GRID%NUM_CELLS
+                     WRITE(54321,*) 5
+                  END DO
+               ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
+                  WRITE(54321,'(A)') 'DATASET UNSTRUCTURED_GRID'
+
+                  WRITE(54321,'(A)') 'FIELD FieldData 1'
+                  WRITE(54321,'(A)') 'TIME 1 1 double'
+                  WRITE(54321,*) CURRENT_TIME
+                  
+                  WRITE(54321,'(A,I10,A7)') 'POINTS', U3D_GRID%NUM_NODES, 'double'
+                  DO I = 1, U3D_GRID%NUM_NODES
+                     WRITE(54321,*) U3D_GRID%NODE_COORDS(:,I)
+                  END DO
+
+                  WRITE(54321,'(A,I10,I10)') 'CELLS', U3D_GRID%NUM_CELLS, 5*U3D_GRID%NUM_CELLS 
+                  DO I = 1, U3D_GRID%NUM_CELLS
+                     WRITE(54321,*) 4, (U3D_GRID%CELL_NODES(:,I) - 1)
+                  END DO
+
+                  WRITE(54321,'(A,I10)') 'CELL_TYPES', U3D_GRID%NUM_CELLS
+                  DO I = 1, U3D_GRID%NUM_CELLS
+                     WRITE(54321,*) 10
+                  END DO
+
+               ELSE IF (DIMS == 0) THEN
+                  WRITE(54321,'(A)') 'DATASET RECTILINEAR_GRID'
+
+                  WRITE(54321,'(A)') 'FIELD FieldData 1'
+                  WRITE(54321,'(A)') 'TIME 1 1 double'
+                  WRITE(54321,*) CURRENT_TIME
+                  
+                  WRITE(54321,'(A,I10,I10,I10)') 'DIMENSIONS', NX+1, NY+1, NZ+1
+
+                  WRITE(54321,'(A,I10,A7)') 'X_COORDINATES', NX+1, 'double'
+                  WRITE(54321,*) XNODES
+
+                  WRITE(54321,'(A,I10,A7)') 'Y_COORDINATES', NY+1, 'double'
+                  WRITE(54321,*) YNODES
+
+                  WRITE(54321,'(A,I10,A7)') 'Z_COORDINATES', NZ+1, 'double'
+                  WRITE(54321,*) ZNODES
+               ELSE IF (DIMS == 1) THEN
+                  WRITE(54321,'(A)') 'DATASET RECTILINEAR_GRID'
+
+                  WRITE(54321,'(A)') 'FIELD FieldData 1'
+                  WRITE(54321,'(A)') 'TIME 1 1 double'
+                  WRITE(54321,*) CURRENT_TIME
+                  
+                  WRITE(54321,'(A,I10,I10,I10)') 'DIMENSIONS', NX+1, NY+1, 1 
+
+                  WRITE(54321,'(A,I10,A7)') 'X_COORDINATES', NX+1, 'double'
+                  WRITE(54321,*) XNODES
+
+                  WRITE(54321,'(A,I10,A7)') 'Y_COORDINATES', 1, 'double'
+                  WRITE(54321,*) 0.
+
+                  WRITE(54321,'(A,I10,A7)') 'Z_COORDINATES', 1, 'double'
+                  WRITE(54321,*) 0.
+               ELSE IF (DIMS == 2) THEN
+                  WRITE(54321,'(A)') 'DATASET RECTILINEAR_GRID'
+
+                  WRITE(54321,'(A)') 'FIELD FieldData 1'
+                  WRITE(54321,'(A)') 'TIME 1 1 double'
+                  WRITE(54321,*) CURRENT_TIME
+                  
+                  WRITE(54321,'(A,I10,I10,I10)') 'DIMENSIONS', NX+1, NY+1, 1 
+
+                  WRITE(54321,'(A,I10,A7)') 'X_COORDINATES', NX+1, 'double'
+                  WRITE(54321,*) XNODES
+
+                  WRITE(54321,'(A,I10,A7)') 'Y_COORDINATES', NY+1, 'double'
+                  WRITE(54321,*) YNODES
+
+                  WRITE(54321,'(A,I10,A7)') 'Z_COORDINATES', 1, 'double'
+                  WRITE(54321,*) 0.
+               END IF
+               
+               WRITE(54321,'(A,I10)') 'CELL_DATA', NCELLS
+               IF (BOOL_DUMP_MOMENTS) THEN
+                  WRITE(54321,'(A,I10)') 'FIELD FieldData', (13+33)*N_SPECIES+1+N_REACTIONS
+               ELSE
+                  WRITE(54321,'(A,I10)') 'FIELD FieldData', 13*N_SPECIES+1+N_REACTIONS
+               END IF
+
+
+               ! Write per-cell value
+               WRITE(54321,'(A,I10,I10,A8)') 'PROC_ID', 1, NCELLS, 'integer'
+               WRITE(54321,*) CELL_PROC_ID
+
+               ! Write per-cell, per-species values
+               DO JS = 1, N_SPECIES
+                  FIRST = 1 + (JS-1)*NCELLS
+                  LAST  = JS*NCELLS
+                  SPWT = SPECIES(JS)%SPWT
+               
+                  WRITE(string, *) 'number_particles_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NP(FIRST:LAST)
+
+                  WRITE(string, *) 'nrho_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  IF (GRID_TYPE == RECTILINEAR_NONUNIFORM .OR. GRID_TYPE == UNSTRUCTURED .OR. AXI) THEN
+                     IF (BOOL_RADIAL_WEIGHTING) THEN
+                        IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
+                           WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/CELL_VOLUMES
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                           WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U1D_GRID%CELL_VOLUMES
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                           WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U2D_GRID%CELL_VOLUMES
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
+                           WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U3D_GRID%CELL_VOLUMES
+                        END IF
+                     ELSE
+                        IF (GRID_TYPE == RECTILINEAR_NONUNIFORM) THEN
+                           WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/CELL_VOLUMES
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 1) THEN
+                           WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U1D_GRID%CELL_VOLUMES
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 2) THEN
+                           WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U2D_GRID%CELL_VOLUMES
+                        ELSE IF (GRID_TYPE == UNSTRUCTURED .AND. DIMS == 3) THEN
+                           WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/U3D_GRID%CELL_VOLUMES
+                        END IF
+                     END IF
+                  ELSE IF (GRID_TYPE == RECTILINEAR_UNIFORM) THEN
+                     WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_NREAL(FIRST:LAST)/CELL_VOL
+                  END IF
+
+                  WRITE(string, *) 'vx_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_VX(FIRST:LAST)
+
+                  WRITE(string, *) 'vy_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_VY(FIRST:LAST)
+
+                  WRITE(string, *) 'vz_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_VZ(FIRST:LAST)
+
+                  WRITE(string, *) 'Ttrx_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_TTRX(FIRST:LAST)
+
+                  WRITE(string, *) 'Ttry_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_TTRY(FIRST:LAST)
+
+                  WRITE(string, *) 'Ttrz_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_TTRZ(FIRST:LAST)
+
+                  WRITE(string, *) 'Ttr_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_TTR(FIRST:LAST)
+
+                  WRITE(string, *) 'Trot_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_TROT(FIRST:LAST)
+
+                  WRITE(string, *) 'Tvib_mean_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_TVIB(FIRST:LAST)
+
+                  WRITE(string, *) 'num_cumulated_one_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A8)') string, 1, NCELLS, 'integer'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(FIRST:LAST)
+
+                  WRITE(string, *) 'num_cumulated_two_', SPECIES(JS)%NAME
+                  WRITE(54321,'(A,I10,I10,A8)') string, 1, NCELLS, 'integer'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(FIRST:LAST)
+
+               
+                  IF (BOOL_DUMP_MOMENTS) THEN
+                     ! Now dump the 33 moments
+                     DO MOM = 1, 33
+                        WRITE(54321,'(A,A,I10,I10,A7)') TRIM(MOMENT_STRING(MOM)), SPECIES(JS)%NAME, 1, NCELLS, 'double'
+                        WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_MOMENTS(FIRST:LAST, MOM)
+                     END DO
+                  END IF
+            
+            
+               END DO
+
+               ! Write per-cell per-reaction values
+               DO JR = 1, N_REACTIONS
+                  FIRST = 1 + (JR-1)*NCELLS
+                  LAST  = JR*NCELLS
+               
+                  WRITE(string, '(A14,I0)') 'reaction_rate_', JR
+                  WRITE(54321,'(A,I10,I10,A7)') string, 1, NCELLS, 'double'
+                  WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_REACTIONS(FIRST:LAST)
+               END DO
+
+
+               IF (PIC_TYPE .NE. NONE) THEN
+                  IF (GRID_TYPE == UNSTRUCTURED) THEN
+                     WRITE(54321,'(A,I10)') 'FIELD FieldData', 3
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'E_X', 1, NCELLS, 'double'
+                     WRITE(54321,*) E_FIELD(1,:,:)
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'E_Y', 1, NCELLS, 'double'
+                     WRITE(54321,*) E_FIELD(2,:,:)
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'E_Z', 1, NCELLS, 'double'
+                     WRITE(54321,*) E_FIELD(3,:,:)
+
+                     WRITE(54321,'(A,I10)') 'POINT_DATA', NNODES
+                     WRITE(54321,'(A,I10)') 'FIELD FieldData', 6
+                  
+                     WRITE(54321,'(A,I10,I10,A7)') 'QRHO', 1, NNODES, 'double'
+                     WRITE(54321,*) RHS
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'PHI', 1, NNODES, 'double'
+                     WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_PHI
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'PHIBAR', 1, NNODES, 'double'
+                     WRITE(54321,*) PHIBAR_FIELD
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'B_X', 1, NNODES, 'double'
+                     WRITE(54321,*) B_FIELD(1,:,:)
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'B_Y', 1, NNODES, 'double'
+                     WRITE(54321,*) B_FIELD(2,:,:)
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'B_Z', 1, NNODES, 'double'
+                     WRITE(54321,*) B_FIELD(3,:,:)
+
+
+                  ELSE
+                     WRITE(54321,'(A,I10)') 'POINT_DATA', NNODES
+                     WRITE(54321,'(A,I10)') 'FIELD FieldData', 5
+                  
+                     WRITE(54321,'(A,I10,I10,A7)') 'QRHO', 1, NNODES, 'double'
+                     WRITE(54321,*) RHS
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'PHI', 1, NNODES, 'double'
+                     WRITE(54321,*) GRID_AVG_TASKS(ITASK)%AVG_PHI
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'E_X', 1, NNODES, 'double'
+                     WRITE(54321,*) E_FIELD(1,:,:)
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'E_Y', 1, NNODES, 'double'
+                     WRITE(54321,*) E_FIELD(2,:,:)
+
+                     WRITE(54321,'(A,I10,I10,A7)') 'E_Z', 1, NNODES, 'double'
+                     WRITE(54321,*) E_FIELD(3,:,:)
+                  END IF
+               END IF
+
+               CLOSE(54321)
+            
             END IF
 
-            CLOSE(54321)
-         
          END IF
 
-      END IF 
+         GRID_AVG_TASKS(ITASK)%AVG_NP = 0
+         GRID_AVG_TASKS(ITASK)%AVG_NREAL = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_VX = 0
+         GRID_AVG_TASKS(ITASK)%AVG_VY = 0
+         GRID_AVG_TASKS(ITASK)%AVG_VZ = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_TTRX = 0
+         GRID_AVG_TASKS(ITASK)%AVG_TTRY = 0
+         GRID_AVG_TASKS(ITASK)%AVG_TTRZ = 0
+         GRID_AVG_TASKS(ITASK)%AVG_TTR = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_TROT = 0
+         GRID_AVG_TASKS(ITASK)%AVG_TVIB = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_REACTIONS = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_CUMULATED = 0
+         GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE = 0
+         GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO = 0
+
+         IF (BOOL_DUMP_MOMENTS) GRID_AVG_TASKS(ITASK)%AVG_MOMENTS = 0
+
+      END DO
 
    END SUBROUTINE GRID_SAVE
 
@@ -1138,100 +1215,69 @@ MODULE postprocess
 
       IMPLICIT NONE
 
-      INTEGER :: LENGTH
+      INTEGER :: LENGTH, ITASK
 
       LENGTH = NCELLS * N_SPECIES
+
+      DO ITASK = 1, N_GRID_AVG_TASKS
+         
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_NP(LENGTH))
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_NREAL(LENGTH))
+
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_VX(LENGTH))
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_VY(LENGTH))
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_VZ(LENGTH))
+         
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_TTRX(LENGTH))
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_TTRY(LENGTH))
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_TTRZ(LENGTH))
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_TTR(LENGTH))
+
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_TROT(LENGTH))
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_TVIB(LENGTH))
+
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_REACTIONS(NCELLS*N_REACTIONS))
+         
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE(LENGTH))
+         ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO(LENGTH))
+
+         GRID_AVG_TASKS(ITASK)%AVG_NP = 0
+         GRID_AVG_TASKS(ITASK)%AVG_NREAL = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_VX = 0
+         GRID_AVG_TASKS(ITASK)%AVG_VY = 0
+         GRID_AVG_TASKS(ITASK)%AVG_VZ = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_TTRX = 0
+         GRID_AVG_TASKS(ITASK)%AVG_TTRY = 0
+         GRID_AVG_TASKS(ITASK)%AVG_TTRZ = 0
+         GRID_AVG_TASKS(ITASK)%AVG_TTR = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_TROT = 0
+         GRID_AVG_TASKS(ITASK)%AVG_TVIB = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_REACTIONS = 0
+
+         GRID_AVG_TASKS(ITASK)%AVG_CUMULATED = 0
+         GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_ONE = 0
+         GRID_AVG_TASKS(ITASK)%AVG_CUMULATED_INTENSIVE_TWO = 0
+
+         IF (BOOL_DUMP_MOMENTS) THEN
+            ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_MOMENTS(LENGTH,33))
+            GRID_AVG_TASKS(ITASK)%AVG_MOMENTS = 0
+         END IF
+
+         IF (PIC_TYPE .NE. NONE) THEN
+            ALLOCATE(GRID_AVG_TASKS(ITASK)%AVG_PHI(NNODES))
+            GRID_AVG_TASKS(ITASK)%AVG_PHI = 0
+         END IF
+
+      END DO
       
-      ALLOCATE(AVG_NP(LENGTH))
-      ALLOCATE(AVG_NREAL(LENGTH))
-
-      ALLOCATE(AVG_VX(LENGTH))
-      ALLOCATE(AVG_VY(LENGTH))
-      ALLOCATE(AVG_VZ(LENGTH))
-      
-      ALLOCATE(AVG_TTRX(LENGTH))
-      ALLOCATE(AVG_TTRY(LENGTH))
-      ALLOCATE(AVG_TTRZ(LENGTH))
-      ALLOCATE(AVG_TTR(LENGTH))
-
-      ALLOCATE(AVG_TROT(LENGTH))
-      ALLOCATE(AVG_TVIB(LENGTH))
-
-      ALLOCATE(AVG_REACTIONS(NCELLS*N_REACTIONS))
-      
-      ALLOCATE(AVG_CUMULATED_INTENSIVE_ONE(LENGTH))
-      ALLOCATE(AVG_CUMULATED_INTENSIVE_TWO(LENGTH))
-
-      AVG_NP = 0
-      AVG_NREAL = 0
-
-      AVG_VX = 0
-      AVG_VY = 0
-      AVG_VZ = 0
-
-      AVG_TTRX = 0
-      AVG_TTRY = 0
-      AVG_TTRZ = 0
-      AVG_TTR = 0
-
-      AVG_TROT = 0
-      AVG_TVIB = 0
-
-      AVG_REACTIONS = 0
-
-      AVG_CUMULATED = 0
-      AVG_CUMULATED_INTENSIVE_ONE = 0
-      AVG_CUMULATED_INTENSIVE_TWO = 0
-
-      IF (BOOL_DUMP_MOMENTS) THEN
-         ALLOCATE(AVG_MOMENTS(LENGTH,33))
-         AVG_MOMENTS = 0
-      END IF
-
-      IF (PIC_TYPE .NE. NONE) THEN
-         ALLOCATE(AVG_PHI(NNODES))
-         AVG_PHI = 0
-      END IF
-
       ALLOCATE(TIMESTEP_REACTIONS(NCELLS*N_REACTIONS))
       TIMESTEP_REACTIONS = 0.d0
 
-      
-
    END SUBROUTINE INIT_POSTPROCESS
-
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   ! SUBROUTINE GRID_RESET -> Resets cumulated average !!!!!!!!!!!!!!!!!!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-   SUBROUTINE GRID_RESET
-
-      IMPLICIT NONE
-
-      AVG_NP = 0
-      AVG_NREAL = 0
-
-      AVG_VX = 0
-      AVG_VY = 0
-      AVG_VZ = 0
-
-      AVG_TTRX = 0
-      AVG_TTRY = 0
-      AVG_TTRZ = 0
-      AVG_TTR = 0
-
-      AVG_TROT = 0
-      AVG_TVIB = 0
-
-      AVG_REACTIONS = 0
-
-      AVG_CUMULATED = 0
-      AVG_CUMULATED_INTENSIVE_ONE = 0
-      AVG_CUMULATED_INTENSIVE_TWO = 0
-
-      IF (BOOL_DUMP_MOMENTS) AVG_MOMENTS = 0
-
-   END SUBROUTINE GRID_RESET
 
 
 
